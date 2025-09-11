@@ -1,10 +1,20 @@
 const express = require('express');
 const path = require('path');
 const { Pool } = require('pg');
+const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// AWS Bedrock client setup
+const bedrockClient = new BedrockRuntimeClient({
+    region: process.env.AWS_REGION || 'us-east-1',
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    }
+});
 
 // Database connection
 const pool = new Pool({
@@ -50,8 +60,11 @@ app.post('/api/chat', async (req, res) => {
     const { message } = req.body;
     
     try {
-        // Generate AI response with database context
-        const botResponse = await generateBotResponse(message);
+        // Get database context for AI
+        const dbContext = await getDatabaseContext();
+        
+        // Generate AI response using Bedrock
+        const botResponse = await generateAIResponse(message, dbContext);
         
         res.json({
             success: true,
@@ -65,6 +78,218 @@ app.post('/api/chat', async (req, res) => {
         });
     }
 });
+
+// Enhanced AI response using AWS Bedrock Nova Micro
+async function generateAIResponse(userMessage, dbContext) {
+    const systemPrompt = `# Medical Scheduling Assistant System Prompt
+
+## ROLE AND PURPOSE
+You are a specialized medical appointment scheduling assistant for a healthcare practice. Your ONLY purpose is to help patients schedule, reschedule, or check appointments. You should be professional, helpful, and empathetic while maintaining strict focus on scheduling-related tasks.
+
+## CORE RESPONSIBILITIES
+1. **Schedule new appointments** (consultations, follow-ups, procedures, specialist visits)
+2. **Check appointment availability** against the provided schedule database
+3. **Handle appointment modifications** (reschedule, cancel)
+4. **Provide clear information** about available time slots
+5. **Collect necessary patient information** for booking (name, contact info, appointment type, preferred dates/times)
+
+## COMMUNICATION STYLE
+- **Tone**: Professional yet warm and approachable
+- **Language**: Use simple, clear language while understanding medical terminology
+- **Patience**: Be understanding of patient confusion or anxiety
+- **Efficiency**: Guide conversations toward successful appointment booking
+
+## HANDLING MEDICAL TERMINOLOGY
+- **Understand**: Recognize complex medical terms, specialty names, procedure types
+- **Translate**: Explain medical terms in simple language when needed
+
+## SCHEDULING CONFLICT RESPONSES
+When requested times are unavailable, respond with:
+1. **Acknowledge the request**: "I understand you'd prefer [requested time]"
+2. **Explain unavailability**: "Unfortunately, that slot is already booked"
+3. **Offer alternatives**: "I have these available times nearby: [list 2-3 options]"
+4. **Ask for preference**: "Which of these would work better for you?"
+
+## OFF-TOPIC CONVERSATION MANAGEMENT
+
+### First Redirect (Gentle)
+"I'd be happy to help with that, but I'm specifically designed to assist with appointment scheduling. Let's get you booked first - what type of appointment are you looking to schedule?"
+
+### Second Redirect (Firmer)
+"I understand you have other questions, but my expertise is really in scheduling appointments. Once you're booked, your doctor or our clinical staff can address those concerns during your visit. Shall we find you an appointment time?"
+
+### Third Redirect (Offer Human Help)
+"I can see you have questions beyond scheduling. Would you like me to connect you with one of our patient representatives who can better assist you with those concerns?"
+
+## RESPONSE FORMAT
+Always respond in JSON format with:
+{
+  "content": "Your response message here",
+  "actions": [
+    {"type": "button", "text": "Button text", "action": "action_type", "data": "action_data"}
+  ]
+}
+
+Actions can be:
+- select_doctor (data: doctor_id)
+- select_specialty (data: specialty_name)
+- book_time (data: "doctor_id,date,time")
+- show_more_times
+- callback
+- transfer
+
+## CURRENT DATABASE CONTEXT:
+${JSON.stringify(dbContext, null, 2)}
+
+Based on this information, help the patient with their scheduling needs.`;
+
+    const payload = {
+        messages: [
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "text",
+                        text: `${systemPrompt}\n\nPatient message: "${userMessage}"`
+                    }
+                ]
+            }
+        ],
+        max_tokens: 1000,
+        temperature: 0.7,
+        top_p: 0.9
+    };
+
+    try {
+        const command = new InvokeModelCommand({
+            modelId: "us.amazon.nova-micro-v1:0", // Nova Micro model
+            contentType: "application/json",
+            accept: "application/json",
+            body: JSON.stringify(payload)
+        });
+
+        const response = await bedrockClient.send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+        
+        // Extract the AI response
+        const aiResponse = responseBody.output.message.content[0].text;
+        
+        // Try to parse as JSON, fallback to simple response if it fails
+        try {
+            return JSON.parse(aiResponse);
+        } catch (parseError) {
+            // If AI didn't return valid JSON, create a simple response
+            return {
+                content: aiResponse,
+                actions: []
+            };
+        }
+        
+    } catch (error) {
+        console.error('Error calling Bedrock:', error);
+        
+        // Fallback to simple response if Bedrock fails
+        return generateFallbackResponse(userMessage, dbContext);
+    }
+}
+
+// Fallback response function if Bedrock is unavailable
+function generateFallbackResponse(userInput, dbContext) {
+    const input = userInput.toLowerCase();
+    
+    if (input.includes('appointment') || input.includes('schedule') || input.includes('book')) {
+        const actions = dbContext.doctors.slice(0, 4).map(doc => ({
+            type: 'button',
+            text: `${doc.name} (${doc.specialty})`,
+            action: 'select_doctor',
+            data: doc.id.toString()
+        }));
+        
+        return {
+            content: "I'd be happy to help you schedule an appointment! Which doctor would you like to see?",
+            actions: actions
+        };
+    }
+    
+    return {
+        content: "I'm here to help you schedule medical appointments. You can ask me to book with specific doctors, check availability for certain dates, or browse by specialty. What would you like to do?",
+        actions: []
+    };
+}
+
+// Get database context for AI
+async function getDatabaseContext() {
+    try {
+        // Get available doctors
+        const doctorsQuery = `
+            SELECT id, name, specialty, office_location
+            FROM doctors 
+            WHERE is_active = true 
+            ORDER BY name
+        `;
+        const doctorsResult = await pool.query(doctorsQuery);
+        
+        // Get today's date for context
+        const today = new Date().toISOString().split('T')[0];
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowDate = tomorrow.toISOString().split('T')[0];
+        
+        // Get upcoming availability (next 7 days)
+        const availabilityQuery = `
+            SELECT DISTINCT
+                d.id as doctor_id,
+                d.name as doctor_name,
+                d.specialty,
+                da.start_time,
+                da.end_time,
+                (CURRENT_DATE + INTERVAL '1 day' * generate_series(0, 6)) as available_date
+            FROM doctors d
+            JOIN doctor_availability da ON d.id = da.doctor_id
+            WHERE d.is_active = true
+            AND da.is_active = true
+            AND da.day_of_week = EXTRACT(DOW FROM CURRENT_DATE + INTERVAL '1 day' * generate_series(0, 6))
+            ORDER BY available_date, start_time
+            LIMIT 20
+        `;
+        const availabilityResult = await pool.query(availabilityQuery);
+        
+        // Get existing appointments for context
+        const appointmentsQuery = `
+            SELECT 
+                a.appointment_date,
+                a.appointment_time,
+                d.name as doctor_name,
+                u.name as patient_name
+            FROM appointments a
+            JOIN doctors d ON a.doctor_id = d.id
+            JOIN users u ON a.user_id = u.id
+            WHERE a.appointment_date >= CURRENT_DATE
+            AND a.appointment_date <= CURRENT_DATE + INTERVAL '7 days'
+            AND a.status IN ('scheduled', 'confirmed')
+            ORDER BY a.appointment_date, a.appointment_time
+        `;
+        const appointmentsResult = await pool.query(appointmentsQuery);
+        
+        return {
+            doctors: doctorsResult.rows,
+            upcoming_availability: availabilityResult.rows,
+            existing_appointments: appointmentsResult.rows,
+            current_date: today,
+            tomorrow_date: tomorrowDate
+        };
+        
+    } catch (error) {
+        console.error('Error getting database context:', error);
+        return {
+            doctors: [],
+            upcoming_availability: [],
+            existing_appointments: [],
+            current_date: new Date().toISOString().split('T')[0],
+            tomorrow_date: new Date(Date.now() + 86400000).toISOString().split('T')[0]
+        };
+    }
+}
 
 // API endpoint for booking appointments
 app.post('/api/book-appointment', async (req, res) => {
@@ -110,147 +335,7 @@ app.post('/api/book-appointment', async (req, res) => {
     }
 });
 
-// Enhanced AI response logic with database integration
-async function generateBotResponse(userInput) {
-    const input = userInput.toLowerCase();
-    
-    if (input.includes('appointment') || input.includes('schedule') || input.includes('book')) {
-        // Get available doctors
-        const doctors = await getAvailableDoctors();
-        const actions = doctors.slice(0, 4).map(doc => ({
-            type: 'button',
-            text: `${doc.name} (${doc.specialty})`,
-            action: 'select_doctor',
-            data: doc.id
-        }));
-        
-        return {
-            content: "I'd be happy to help you schedule an appointment! Which doctor would you like to see?",
-            actions: actions
-        };
-        
-    } else if (input.includes('tomorrow') || input.includes('today') || input.includes('monday') || input.includes('tuesday')) {
-        // Handle date requests
-        const availableSlots = await getAvailableSlotsForDate(extractDateFromMessage(input));
-        
-        if (availableSlots.length > 0) {
-            const actions = availableSlots.slice(0, 4).map(slot => ({
-                type: 'button',
-                text: `${slot.time} with ${slot.doctor_name}`,
-                action: 'book_time',
-                data: `${slot.doctor_id},${slot.date},${slot.time}`
-            }));
-            
-            return {
-                content: `Here are the available appointment times:`,
-                actions: actions
-            };
-        } else {
-            return {
-                content: "I don't see any available slots for that day. Would you like to see other available dates?",
-                actions: [
-                    { type: 'button', text: 'Show next week', action: 'show_next_week' },
-                    { type: 'button', text: 'Different doctor', action: 'show_doctors' }
-                ]
-            };
-        }
-        
-    } else if (input.includes('doctor') || input.includes('cardiologist') || input.includes('dermatologist')) {
-        // Handle doctor/specialty requests
-        const specialty = extractSpecialtyFromMessage(input);
-        const doctors = await getDoctorsBySpecialty(specialty);
-        
-        if (doctors.length > 0) {
-            const actions = doctors.map(doc => ({
-                type: 'button',
-                text: `${doc.name} - ${doc.specialty}`,
-                action: 'select_doctor',
-                data: doc.id
-            }));
-            
-            return {
-                content: `I found these doctors for you:`,
-                actions: actions
-            };
-        } else {
-            return {
-                content: "I couldn't find doctors for that specialty. Here are our available specialists:",
-                actions: await getSpecialtyButtons()
-            };
-        }
-        
-    } else if (input.includes('representative') || input.includes('speak') || input.includes('help')) {
-        return {
-            content: "I can connect you with one of our representatives. Would you like to schedule a callback or get transferred?",
-            actions: [
-                { type: 'button', text: 'Schedule Callback', action: 'callback' },
-                { type: 'button', text: 'Transfer to Representative', action: 'transfer' }
-            ]
-        };
-    }
-    
-    return {
-        content: "I'm here to help you schedule medical appointments. You can ask me to book with specific doctors, check availability for certain dates, or browse by specialty. What would you like to do?"
-    };
-}
-
-// Database helper functions
-async function getAvailableDoctors() {
-    const query = `
-        SELECT id, name, specialty, office_location
-        FROM doctors 
-        WHERE is_active = true 
-        ORDER BY name
-    `;
-    const result = await pool.query(query);
-    return result.rows;
-}
-
-async function getDoctorsBySpecialty(specialty) {
-    const query = `
-        SELECT id, name, specialty, office_location
-        FROM doctors 
-        WHERE is_active = true 
-        AND specialty ILIKE $1
-        ORDER BY name
-    `;
-    const result = await pool.query(query, [`%${specialty}%`]);
-    return result.rows;
-}
-
-async function getAvailableSlotsForDate(targetDate) {
-    // This is a simplified version - you'd want to generate 30-minute slots
-    const query = `
-        SELECT DISTINCT
-            d.id as doctor_id,
-            d.name as doctor_name,
-            d.specialty,
-            da.start_time,
-            da.end_time,
-            $1 as date
-        FROM doctors d
-        JOIN doctor_availability da ON d.id = da.doctor_id
-        WHERE d.is_active = true
-        AND da.is_active = true
-        AND da.day_of_week = EXTRACT(DOW FROM $1::date)
-        AND NOT EXISTS (
-            SELECT 1 FROM appointments a 
-            WHERE a.doctor_id = d.id 
-            AND a.appointment_date = $1
-            AND a.status IN ('scheduled', 'confirmed')
-            AND a.appointment_time BETWEEN da.start_time AND da.end_time
-        )
-        ORDER BY da.start_time
-        LIMIT 10
-    `;
-    
-    const result = await pool.query(query, [targetDate]);
-    return result.rows.map(row => ({
-        ...row,
-        time: row.start_time.slice(0, 5) // Format time as HH:MM
-    }));
-}
-
+// Database helper functions (keeping existing ones)
 async function checkTimeSlotAvailability(doctorId, date, time) {
     const query = `
         SELECT 
@@ -279,14 +364,12 @@ async function checkTimeSlotAvailability(doctorId, date, time) {
 }
 
 async function findOrCreateUser(name, email, phone) {
-    // First try to find existing user
     let result = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
     
     if (result.rows.length > 0) {
         return result.rows[0].id;
     }
     
-    // Create new user
     result = await pool.query(
         'INSERT INTO users (name, email, phone) VALUES ($1, $2, $3) RETURNING id',
         [name, email, phone]
@@ -312,51 +395,26 @@ async function bookAppointment({ userId, doctorId, appointmentTypeId, appointmen
     return result.rows[0];
 }
 
-// Utility functions
-function extractDateFromMessage(message) {
-    const today = new Date();
-    if (message.includes('tomorrow')) {
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        return tomorrow.toISOString().split('T')[0];
-    }
-    if (message.includes('today')) {
-        return today.toISOString().split('T')[0];
-    }
-    // Add more date parsing logic as needed
-    return today.toISOString().split('T')[0];
-}
-
-function extractSpecialtyFromMessage(message) {
-    const specialties = {
-        'heart': 'cardiology',
-        'skin': 'dermatology', 
-        'bone': 'orthopedics',
-        'joint': 'orthopedics',
-        'diabetes': 'endocrinology',
-        'family': 'family medicine'
-    };
+async function getSuggestedAlternatives(doctorId, preferredDate) {
+    // Simple implementation - you can enhance this
+    const query = `
+        SELECT DISTINCT
+            da.start_time,
+            (CURRENT_DATE + INTERVAL '1 day' * generate_series(0, 6)) as available_date
+        FROM doctor_availability da
+        WHERE da.doctor_id = $1
+        AND da.is_active = true
+        ORDER BY available_date, start_time
+        LIMIT 5
+    `;
     
-    for (const [keyword, specialty] of Object.entries(specialties)) {
-        if (message.includes(keyword)) {
-            return specialty;
-        }
-    }
-    return '';
-}
-
-async function getSpecialtyButtons() {
-    const specialties = await pool.query('SELECT DISTINCT specialty FROM doctors WHERE is_active = true');
-    return specialties.rows.map(row => ({
-        type: 'button',
-        text: row.specialty,
-        action: 'select_specialty',
-        data: row.specialty
-    }));
+    const result = await pool.query(query, [doctorId]);
+    return result.rows;
 }
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🏥 Medical Scheduler running at http://0.0.0.0:${PORT}`);
-    console.log(`📅 Ready to schedule appointments!`);
+    console.log(`📅 Ready to schedule appointments with AI!`);
+    console.log(`🤖 AWS Bedrock Nova Micro integration enabled`);
     console.log(`🌐 Access externally at: http://YOUR-EC2-PUBLIC-IP:${PORT}`);
 });
