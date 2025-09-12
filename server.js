@@ -167,14 +167,16 @@ Based on this information, help the patient with their scheduling needs.`;
                 ]
             }
         ],
-        max_tokens: 1000,
-        temperature: 0.7,
-        top_p: 0.9
+        inferenceConfig: {
+			max_tokens: 1000,
+			temperature: 0.7,
+			top_p: 0.9
+		}
     };
 
     try {
         const response = await axios.post(
-            `${BEDROCK_API_BASE}/model/us.amazon.nova-micro-v1:0/invoke`,
+            `${BEDROCK_API_BASE}/model/us.amazon.nova-micro-v1:0/converse`,
             payload,
             {
                 headers: {
