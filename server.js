@@ -323,7 +323,7 @@ app.post('/api/select-appointment', async (req, res) => {
 	console.log('Split data;', splitData);
 	
 	const [doctorId, date, time] = splitData;
-	console.log('Parsed - Doctor ID:', doctor Id, 'Date:', date, 'Time:', time);
+	console.log('Parsed - Doctor ID:', doctorId, 'Date:', date, 'Time:', time);
     
     try {
         const dbContext = await getDatabaseContext();
