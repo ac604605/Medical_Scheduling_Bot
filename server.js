@@ -382,23 +382,23 @@ async function getDatabaseContext() {
         `);
 
         const availabilityQuery = `
-          SELECT
-            d.id AS doctor_id,
-            d.name AS doctor_name,
-            d.specialty,
-            (CURRENT_DATE + (g.n || ' days')::interval)::date AS available_date,
-            da.start_time,
-            da.end_time
-          FROM generate_series(0, 6) AS g(n)
-          JOIN doctor_availability da
-            ON da.day_of_week = EXTRACT(DOW FROM (CURRENT_DATE + (g.n || ' days')::interval))
-          JOIN doctors d
-            ON d.id = da.doctor_id
-          WHERE d.is_active = true
-            AND da.is_active = true
-          ORDER BY available_date, da.start_time
-          LIMIT 100;
-        `;
+			SELECT
+				d.id AS doctor_id,
+				d.name AS doctor_name,
+				d.specialty,
+				(CURRENT_DATE + (g.n || ' days')::interval)::date::text AS available_date,
+				da.start_time,
+				da.end_time
+			FROM generate_series(0, 6) AS g(n)
+			JOIN doctor_availability da
+				ON da.day_of_week = EXTRACT(DOW FROM (CURRENT_DATE + (g.n || ' days')::interval))
+			JOIN doctors d
+				ON d.id = da.doctor_id
+			WHERE d.is_active = true
+				AND da.is_active = true
+			ORDER BY available_date, da.start_time
+			LIMIT 100;
+		`;
         const availabilityResult = await pool.query(availabilityQuery);
 
         const appointmentsResult = await pool.query(`
@@ -456,6 +456,17 @@ app.post('/api/book-appointment', async (req, res) => {
 // --- DB helpers ---
 async function checkTimeSlotAvailability(doctorId, date, time) {
     try {
+        // Convert date to proper format if needed
+        let dateStr = date;
+        if (date instanceof Date) {
+            dateStr = date.toISOString().split('T')[0]; // Convert to YYYY-MM-DD format
+        } else if (typeof date === 'string' && date.includes('GMT')) {
+            // If it's a date string with timezone info, parse and format it
+            dateStr = new Date(date).toISOString().split('T')[0];
+        }
+        
+        console.log('🗓️ Checking availability for:', doctorId, dateStr, time);
+        
         const query = `
           SELECT CASE WHEN COUNT(*) = 0 THEN true ELSE false END as available
           FROM (
@@ -466,7 +477,8 @@ async function checkTimeSlotAvailability(doctorId, date, time) {
              WHERE doctor_id = $1 AND blocked_date = $2 AND $3::time BETWEEN start_time AND end_time
           ) conflicts;
         `;
-        const result = await pool.query(query, [doctorId, date, time]);
+        
+        const result = await pool.query(query, [doctorId, dateStr, time]);
         return { available: !!result.rows[0].available };
     } catch (err) {
         console.error('checkTimeSlotAvailability error:', err);
@@ -504,11 +516,21 @@ async function getSuggestedAlternatives(doctorId) {
 }
 // Add these helper functions first
 function formatDate(dateStr) {
-    const date = new Date(dateStr + 'T00:00:00');
+    // Handle both date strings and date objects
+    let date;
+    if (typeof dateStr === 'string') {
+        // If it's already a string like "2025-09-17", use it directly
+        date = new Date(dateStr + 'T00:00:00');
+    } else {
+        // If it's a Date object, convert it
+        date = new Date(dateStr);
+    }
+    
     const today = new Date();
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
     
+    // Ensure we're comparing just the date parts
     if (date.toDateString() === today.toDateString()) return 'Today';
     if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
     
