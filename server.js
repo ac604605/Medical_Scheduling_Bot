@@ -128,7 +128,8 @@ async function generateAIResponse(userMessage, dbContext) {
 
 	Use the EXACT data format shown above. Do NOT create nested objects or arrays.`;
 
-Keep responses short and focused. If user asks about non-medical topics, politely redirect to appointment scheduling only.`;
+Keep responses short and focused. If user asks about non-medical topics, politely redirect to appointment scheduling only.
+`;
 
         console.log('📦 Building payload...');
         const payload = {
@@ -175,7 +176,7 @@ Keep responses short and focused. If user asks about non-medical topics, politel
         try {
             const parsed = JSON.parse(aiRaw);
             console.log('✅ Successfully parsed AI JSON response');
-			consol.log('AI Actions:', JSON.stringify(parsed.actions, null, 2));
+			console.log('AI Actions:', JSON.stringify(parsed.actions, null, 2));
             return parsed;
         } catch (parseError) {
             console.log('⚠️ AI response not JSON, using fallback. Raw response:', aiRaw);
