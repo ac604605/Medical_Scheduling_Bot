@@ -96,6 +96,7 @@ function extractTextFromBedrockResponse(response) {
 // --- AI response function ---
 // Replace your generateAIResponse function with this smart interpreter approach
 async function generateAIResponse(userMessage, dbContext) {
+	console.log('🔍 generateAIResponse called with:', userMessage);
     const systemPrompt = `# Medical Appointment Interpreter
 
 ## ROLE
