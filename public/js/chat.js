@@ -118,84 +118,69 @@ class ChatInterface {
     }
     
     async handleActionClick(button) {
-    // Prevent multiple clicks
-    if (button.disabled) return;
+        // Prevent multiple clicks
+        if (button.disabled) return;
 
-    const actionType = button.getAttribute('data-type');
-    const actionData = button.getAttribute('data-data');
+        const actionType = button.getAttribute('data-type');
+        const actionData = button.getAttribute('data-data');
 
-    // Disable the button to prevent double-clicks
-    document.querySelectorAll('.action-btn').forEach(btn => {
-        btn.disabled = true;
-        if (btn === button) btn.textContent = 'Processing...';
-    });
+        // Disable the button to prevent double-clicks
+        document.querySelectorAll('.action-btn').forEach(btn => {
+            btn.disabled = true;
+            if (btn === button) btn.textContent = 'Processing...';
+        });
 
-    try {
-        let response;
-    
-        if (actionType === 'select_doctor') {
-            response = await fetch('/api/select-doctor', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ doctorId: actionData })
-            });
-        } else if (actionType === 'select_date') {
-            response = await fetch('/api/select-appointment', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ appointmentData: actionData })
-            });
-        } else if (actionType === 'collect_info') {
-            response = await fetch('/api/complete-booking', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ appointmentData: actionData })
-            });
-        } else if (actionType === 'show_email') {
-            this.addMessage(actionData, 'bot');
-            return;
-        } else if (actionType === 'download_calendar') {
-            window.open(actionData, '_blank');
-            this.addMessage('Calendar file download started! Check your downloads folder.', 'bot');
-            return;
-        } else if (actionType === 'start_over') {
-            this.addMessage('How can I help you schedule your next appointment?', 'bot');
-            return;
-        } else {
-            // For other action types, treat as a regular message
-            this.sendMessage(button.textContent);
-            return;
-        }
-
-        // Handle the response for API calls
-        const data = await response.json();
+        try {
+            let response;
         
-        if (data.success && data.response) {
-            this.addBotResponse(data.response);
-        } else {
-            this.addMessage(data.message || 'Sorry, something went wrong.', 'bot');
+            if (actionType === 'select_doctor') {
+                response = await fetch('/api/select-doctor', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ doctorId: actionData })
+                });
+            } else if (actionType === 'select_date') {
+                response = await fetch('/api/select-appointment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ appointmentData: actionData })
+                });
+            } else if (actionType === 'collect_info') {
+                response = await fetch('/api/complete-booking', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ appointmentData: actionData })
+                });
+            } else if (actionType === 'show_email') {
+                this.addMessage(actionData, 'bot');
+                return;
+            } else if (actionType === 'download_calendar') {
+                window.open(actionData, '_blank');
+                this.addMessage('Calendar file download started! Check your downloads folder.', 'bot');
+                return;
+            } else if (actionType === 'start_over') {
+                this.addMessage('How can I help you schedule your next appointment?', 'bot');
+                return;
+            } else {
+                // For other action types, treat as a regular message
+                this.sendMessage(button.textContent);
+                return;
+            }
+
+            // Handle the response for API calls
+            const data = await response.json();
+            
+            if (data.success && data.response) {
+                this.addBotResponse(data.response);
+            } else {
+                this.addMessage(data.message || 'Sorry, something went wrong.', 'bot');
+            }
+            
+        } catch (error) {
+            console.error('Action error:', error);
+            this.addMessage('Sorry, I encountered an error processing your request.', 'bot');
         }
-        
-    } catch (error) {
-        console.error('Action error:', error);
-        this.addMessage('Sorry, I encountered an error processing your request.', 'bot');
     }
-}
-        
-			const data = await response.json();
-        
-			if (data.success && data.response) {
-				this.addBotResponse(data.response);
-			} else {
-				this.addMessage(data.message || 'Sorry, something went wrong.', 'bot');
-			}
-        
-		} catch (error) {
-			console.error('Action error:', error);
-			this.addMessage('Sorry, I encountered an error processing your request.', 'bot');
-
-	}
-	}
     
     showTypingIndicator() {
         this.typingIndicator.style.display = 'block';
