@@ -583,6 +583,225 @@ app.post('/api/select-doctor', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error retrieving doctor availability' });
     }
 });
+
+// Add this new endpoint to handle the final booking step
+app.post('/api/complete-booking', async (req, res) => {
+    const { appointmentData } = req.body;
+    console.log('📋 Complete booking called with:', appointmentData);
+    
+    const [doctorId, date, time] = appointmentData.split(',');
+    console.log('📋 Parsed booking - Doctor:', doctorId, 'Date:', date, 'Time:', time);
+    
+    try {
+        const dbContext = await getDatabaseContext();
+        const doctor = dbContext.doctors.find(d => d.id == doctorId);
+        console.log('📋 Found doctor:', doctor ? doctor.name : 'NOT FOUND');
+        
+        if (!doctor) {
+            console.log('❌ Doctor not found for booking');
+            return res.status(404).json({ success: false, message: 'Doctor not found' });
+        }
+        
+        // Check availability one more time
+        const availability = await checkTimeSlotAvailability(doctorId, date, time);
+        if (!availability.available) {
+            return res.json({
+                success: false,
+                message: 'Sorry, that appointment time is no longer available.'
+            });
+        }
+        
+        // Book the appointment for "John Smith" (portfolio demo)
+        const demoPatient = {
+            name: "John Smith",
+            email: "john.smith@email.com", 
+            phone: "(555) 123-4567"
+        };
+        
+        const userId = await findOrCreateUser(demoPatient.name, demoPatient.email, demoPatient.phone);
+        const appointment = await bookAppointment({
+            userId,
+            doctorId,
+            appointmentTypeId: 1,
+            appointmentDate: date,
+            appointmentTime: time,
+            reasonForVisit: "General consultation"
+        });
+        
+        console.log('📋 Appointment created:', appointment);
+        
+        // Generate confirmation email content
+        const emailContent = generateEmailConfirmation(appointment, doctor, date, time, demoPatient);
+        
+        // Generate calendar file URL
+        const calendarUrl = `/api/calendar/${appointment.id}`;
+        
+        res.json({
+            success: true,
+            response: {
+                content: "🎉 **Appointment Confirmed!**\n\nYour appointment has been successfully booked. Below is your confirmation email and calendar file:",
+                actions: [
+                    {
+                        type: 'show_email',
+                        text: '📧 View Email Confirmation', 
+                        data: emailContent
+                    },
+                    {
+                        type: 'download_calendar',
+                        text: '📅 Add to Calendar',
+                        data: calendarUrl
+                    },
+                    {
+                        type: 'start_over',
+                        text: '🔄 Book Another Appointment',
+                        data: 'new_booking'
+                    }
+                ]
+            }
+        });
+        
+    } catch (error) {
+        console.log('❌ Complete booking error:', error.message);
+        console.log('❌ Stack trace:', error.stack);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error completing your booking. Please try again.' 
+        });
+    }
+});
+
+// Generate email confirmation content
+function generateEmailConfirmation(appointment, doctor, date, time, patient) {
+    const formattedDate = formatDate(date);
+    const formattedTime = formatTime(time);
+    
+    return `
+**APPOINTMENT CONFIRMATION**
+
+Dear ${patient.name},
+
+Your medical appointment has been confirmed with the following details:
+
+**📅 Appointment Information:**
+- **Doctor:** ${doctor.name}
+- **Specialty:** ${doctor.specialty}  
+- **Date:** ${formattedDate}
+- **Time:** ${formattedTime}
+- **Confirmation #:** ${appointment.confirmation_number || appointment.id}
+
+**🏥 Location:**
+HealthCare Medical Center
+123 Medical Plaza Drive
+Orange, VA 22960
+
+**📞 Contact Information:**
+- Main Line: (540) 555-CARE (2273)
+- Direct Line: ${doctor.office_location || 'Extension 1234'}
+
+**📋 Important Instructions:**
+• Please arrive 15 minutes early for check-in
+• Bring a valid photo ID and insurance card
+• Bring a list of current medications
+• Wear comfortable, loose-fitting clothing
+• If you need to cancel or reschedule, please call at least 24 hours in advance
+
+**💳 Payment & Insurance:**
+We accept most major insurance plans. Please verify your coverage before your visit.
+
+**🦠 Health & Safety:**
+• Please wear a mask in all clinical areas
+• If you're feeling unwell, please call to reschedule
+• Complete health screening will be required upon arrival
+
+Thank you for choosing HealthCare Medical Center. We look forward to seeing you!
+
+**Questions?** Call us at (540) 555-CARE or email appointments@healthcare.com
+
+---
+*This is an automated confirmation. Please do not reply to this message.*
+    `.trim();
+}
+
+// Generate calendar file endpoint  
+app.get('/api/calendar/:appointmentId', async (req, res) => {
+    const { appointmentId } = req.params;
+    
+    try {
+        // Get appointment details from database
+        const appointmentQuery = `
+            SELECT a.*, d.name as doctor_name, d.specialty, u.name as patient_name
+            FROM appointments a
+            JOIN doctors d ON a.doctor_id = d.id  
+            JOIN users u ON a.user_id = u.id
+            WHERE a.id = $1
+        `;
+        const result = await pool.query(appointmentQuery, [appointmentId]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Appointment not found' });
+        }
+        
+        const appt = result.rows[0];
+        
+        // Generate ICS file content
+        const icsContent = generateICSFile(appt);
+        
+        // Set headers for calendar file download
+        res.setHeader('Content-Type', 'text/calendar');
+        res.setHeader('Content-Disposition', `attachment; filename="appointment-${appointmentId}.ics"`);
+        res.send(icsContent);
+        
+    } catch (error) {
+        console.error('Error generating calendar file:', error);
+        res.status(500).json({ error: 'Error generating calendar file' });
+    }
+});
+
+// Generate ICS (iCalendar) file content
+function generateICSFile(appointment) {
+    const startDateTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
+    const endDateTime = new Date(startDateTime.getTime() + 30 * 60000); // 30 minutes later
+    
+    // Format dates for ICS (YYYYMMDDTHHMMSSZ format)
+    const formatICSDate = (date) => {
+        return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    };
+    
+    const startICS = formatICSDate(startDateTime);
+    const endICS = formatICSDate(endDateTime);
+    const now = formatICSDate(new Date());
+    
+    return `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//HealthCare Medical Center//Appointment Scheduler//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+UID:appointment-${appointment.id}@healthcare.com
+DTSTART:${startICS}
+DTEND:${endICS}
+DTSTAMP:${now}
+SUMMARY:Medical Appointment - Dr. ${appointment.doctor_name}
+DESCRIPTION:Medical appointment with Dr. ${appointment.doctor_name} (${appointment.specialty})\\n\\nPatient: ${appointment.patient_name}\\nReason: ${appointment.reason_for_visit || 'General consultation'}\\n\\nLocation: HealthCare Medical Center\\n123 Medical Plaza Drive\\nOrange, VA 22960\\n\\nPhone: (540) 555-CARE\\n\\nPlease arrive 15 minutes early.
+LOCATION:HealthCare Medical Center, 123 Medical Plaza Drive, Orange, VA 22960
+ORGANIZER:CN=HealthCare Medical Center:MAILTO:appointments@healthcare.com
+ATTENDEE:CN=${appointment.patient_name}:MAILTO:john.smith@email.com
+STATUS:CONFIRMED
+TRANSP:OPAQUE
+BEGIN:VALARM
+TRIGGER:-PT24H
+DESCRIPTION:Medical appointment reminder - Dr. ${appointment.doctor_name} tomorrow
+ACTION:DISPLAY
+END:VALARM
+BEGIN:VALARM
+TRIGGER:-PT1H
+DESCRIPTION:Medical appointment in 1 hour - Dr. ${appointment.doctor_name}
+ACTION:DISPLAY
+END:VALARM
+END:VEVENT
+END:VCALENDAR`;
+}
+}
 // --- Start server ---
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🏥 Medical Scheduler running at http://0.0.0.0:${PORT}`);
