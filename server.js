@@ -96,8 +96,11 @@ function extractTextFromBedrockResponse(response) {
 // --- AI response function ---
 // Replace your generateAIResponse function with this smart interpreter approach
 async function generateAIResponse(userMessage, dbContext) {
-	console.log('🔍 generateAIResponse called with:', userMessage);
-    const systemPrompt = `# Medical Appointment Interpreter
+    console.log('🔍 generateAIResponse called with:', userMessage);
+    
+    try {
+        console.log('📋 Building system prompt...');
+        const systemPrompt = `# Medical Appointment Interpreter
 
 ## ROLE
 You are an intelligent interpreter for a medical appointment system. Your job is to:
@@ -116,67 +119,41 @@ When user mentions a doctor name:
 - Match against available doctors: ${dbContext.doctors.map(d => `${d.name} (${d.specialty})`).join(', ')}
 - If partial match found, confirm full name and specialty
 - Provide available dates as selectable options
-- Format: "Great! I found Dr. [Full Name] in [Specialty]. Available dates: [clickable options]"
-
-### SPECIALTY REQUESTS
-When user asks for specialty:
-- Show doctors in that specialty with available times
-- Format as selectable options
-
-### DATE/TIME REQUESTS  
-When user specifies dates:
-- Check availability against database
-- Provide time slot options
-- Make times clickable for selection
 
 ## RESPONSE FORMAT
 Always return JSON:
 {
   "content": "Your response text",
   "actions": [
-    {"type": "select_doctor", "text": "Dr. Johnson (Cardiology)", "data": "doctor_id"},
-    {"type": "select_date", "text": "Tomorrow 2:00 PM", "data": "doctor_id,date,time"},
-    {"type": "select_specialty", "text": "Cardiology", "data": "specialty"},
-    {"type": "book_appointment", "text": "Book This Appointment", "data": "booking_data"}
+    {"type": "select_doctor", "text": "Dr. Johnson (Cardiology)", "data": "doctor_id"}
   ]
 }
 
 ## CURRENT DATA
 Doctors: ${JSON.stringify(dbContext.doctors, null, 2)}
-Availability: ${JSON.stringify(dbContext.upcoming_availability.slice(0, 10), null, 2)}
 
-## EXAMPLE INTERACTIONS
+Keep responses short and focused. If user asks about non-medical topics, politely redirect to appointment scheduling only.`;
 
-User: "I want to see Dr. Johnson"
-Response: Search doctors for "Johnson", if found: "I found Dr. Sarah Johnson in Oncology. She's available: [Tomorrow 2:00 PM] [Friday 10:30 AM] [Monday 3:15 PM]"
-
-User: "I need a cardiologist"  
-Response: "Our cardiology specialists are: [Dr. Smith] [Dr. Brown]. Which would you prefer?"
-
-User: "Schedule me for tomorrow afternoon"
-Response: "I have these afternoon slots tomorrow: [Dr. Johnson 2:00 PM] [Dr. Smith 3:30 PM] [Dr. Brown 4:00 PM]"
-
-Keep responses short, focused, and actionable. Always provide clickable options when possible.`;
-
-    const payload = {
-        messages: [
-            {
-                role: "user",
-                content: [
-                    {
-                        text: `${systemPrompt}\n\nUser says: "${userMessage}"\n\nProvide a helpful response with actionable options.`
-                    }
-                ]
+        console.log('📦 Building payload...');
+        const payload = {
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        {
+                            text: `${systemPrompt}\n\nUser says: "${userMessage}"\n\nProvide a helpful response.`
+                        }
+                    ]
+                }
+            ],
+            inferenceConfig: {
+                maxTokens: 800,
+                temperature: 0.3,
+                topP: 0.9
             }
-        ],
-        inferenceConfig: {
-            maxTokens: 800,
-            temperature: 0.3, // Lower temperature for more consistent structured responses
-            topP: 0.9
-        }
-    };
+        };
 
-    try {
+        console.log('🚀 Making Bedrock API call...');
         const response = await axios.post(
             `${BEDROCK_API_BASE}/model/us.amazon.nova-micro-v1:0/converse`,
             payload,
@@ -190,19 +167,26 @@ Keep responses short, focused, and actionable. Always provide clickable options 
             }
         );
 
+        console.log('✅ Bedrock API response received, status:', response.status);
         const aiRaw = extractTextFromBedrockResponse(response);
+        console.log('📝 AI raw response:', aiRaw ? aiRaw.substring(0, 100) + '...' : 'NULL');
+
         if (!aiRaw) {
+            console.log('⚠️ No AI response, using fallback');
             return generateSmartFallback(userMessage, dbContext);
         }
 
         try {
-            return JSON.parse(aiRaw);
-        } catch {
-            // If AI doesn't return JSON, create smart response based on user input
+            const parsed = JSON.parse(aiRaw);
+            console.log('✅ Successfully parsed AI JSON response');
+            return parsed;
+        } catch (parseError) {
+            console.log('⚠️ AI response not JSON, using fallback. Raw response:', aiRaw);
             return generateSmartFallback(userMessage, dbContext, aiRaw);
         }
     } catch (error) {
-        console.error('Error calling Bedrock:', (error.response && error.response.data) || error.message);
+        console.log('❌ Function failed at some point:', error.message);
+        console.log('❌ Stack trace:', error.stack);
         return generateSmartFallback(userMessage, dbContext);
     }
 }
