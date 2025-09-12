@@ -502,7 +502,63 @@ async function getSuggestedAlternatives(doctorId) {
     const result = await pool.query(query, [doctorId]);
     return result.rows;
 }
+// Add these helper functions first
+function formatDate(dateStr) {
+    const date = new Date(dateStr + 'T00:00:00');
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
+    
+    return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+}
 
+function formatTime(timeStr) {
+    const [hours, minutes] = timeStr.split(':');
+    const hour12 = hours > 12 ? hours - 12 : hours;
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    return `${hour12}:${minutes} ${ampm}`;
+}
+
+// Handler for when user selects a doctor
+app.post('/api/select-doctor', async (req, res) => {
+    const { doctorId } = req.body;
+    console.log('🏥 Doctor selected:', doctorId);
+    
+    try {
+        const dbContext = await getDatabaseContext();
+        const doctor = dbContext.doctors.find(d => d.id == doctorId);
+        
+        if (!doctor) {
+            return res.status(404).json({ success: false, message: 'Doctor not found' });
+        }
+        
+        const availableTimes = dbContext.upcoming_availability
+            .filter(slot => slot.doctor_id == doctorId)
+            .slice(0, 8)
+            .map(slot => ({
+                type: 'select_date',
+                text: `${formatDate(slot.available_date)} at ${formatTime(slot.start_time)}`,
+                data: `${slot.doctor_id},${slot.available_date},${slot.start_time}`
+            }));
+            
+        console.log('📅 Found', availableTimes.length, 'available times');
+            
+        res.json({
+            success: true,
+            response: {
+                content: `Perfect! Dr. ${doctor.name} (${doctor.specialty}) has these available appointments:`,
+                actions: availableTimes
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error selecting doctor:', error);
+        res.status(500).json({ success: false, message: 'Error retrieving doctor availability' });
+    }
+});
 // --- Start server ---
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🏥 Medical Scheduler running at http://0.0.0.0:${PORT}`);
