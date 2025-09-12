@@ -1,20 +1,20 @@
 const express = require('express');
 const path = require('path');
 const { Pool } = require('pg');
-const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
+const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// AWS Bedrock client setup
-const bedrockClient = new BedrockRuntimeClient({
-    region: process.env.AWS_REGION || 'us-east-1',
-    credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-    }
-});
+// Bearer token configuration
+const BEDROCK_API_BASE = process.env.BEDROCK_API_BASE || 'https://bedrock-runtime.us-east-1.amazonaws.com';
+const BEARER_TOKEN = process.env.AWS_BEARER_TOKEN_BEDROCK;
+
+if (!BEARER_TOKEN) {
+    console.error('❌ AWS_BEARER_TOKEN_BEDROCK is required in environment variables');
+    process.exit(1);
+}
 
 // Database connection
 const pool = new Pool({
@@ -49,7 +49,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.get('/', (req, res) => {
-    res.render('index', { 
+    res.render('index', {
         title: 'HealthCare Scheduler',
         subtitle: 'AI-Powered Appointment Booking'
     });
@@ -58,12 +58,12 @@ app.get('/', (req, res) => {
 // API endpoint for chat messages
 app.post('/api/chat', async (req, res) => {
     const { message } = req.body;
-    
+
     try {
         // Get database context for AI
         const dbContext = await getDatabaseContext();
         
-        // Generate AI response using Bedrock
+        // Generate AI response using Bedrock via Bearer Token
         const botResponse = await generateAIResponse(message, dbContext);
         
         res.json({
@@ -79,58 +79,69 @@ app.post('/api/chat', async (req, res) => {
     }
 });
 
-// Enhanced AI response using AWS Bedrock Nova Micro
+// Enhanced AI response using Bearer Token authentication
 async function generateAIResponse(userMessage, dbContext) {
     const systemPrompt = `# Medical Scheduling Assistant System Prompt
 
 ## ROLE AND PURPOSE
+
 You are a specialized medical appointment scheduling assistant for a healthcare practice. Your ONLY purpose is to help patients schedule, reschedule, or check appointments. You should be professional, helpful, and empathetic while maintaining strict focus on scheduling-related tasks.
 
 ## CORE RESPONSIBILITIES
+
 1. **Schedule new appointments** (consultations, follow-ups, procedures, specialist visits)
-2. **Check appointment availability** against the provided schedule database
-3. **Handle appointment modifications** (reschedule, cancel)
-4. **Provide clear information** about available time slots
-5. **Collect necessary patient information** for booking (name, contact info, appointment type, preferred dates/times)
+1. **Check appointment availability** against the provided schedule database
+1. **Handle appointment modifications** (reschedule, cancel)
+1. **Provide clear information** about available time slots
+1. **Collect necessary patient information** for booking (name, contact info, appointment type, preferred dates/times)
 
 ## COMMUNICATION STYLE
+
 - **Tone**: Professional yet warm and approachable
 - **Language**: Use simple, clear language while understanding medical terminology
 - **Patience**: Be understanding of patient confusion or anxiety
 - **Efficiency**: Guide conversations toward successful appointment booking
 
 ## HANDLING MEDICAL TERMINOLOGY
+
 - **Understand**: Recognize complex medical terms, specialty names, procedure types
 - **Translate**: Explain medical terms in simple language when needed
 
 ## SCHEDULING CONFLICT RESPONSES
+
 When requested times are unavailable, respond with:
+
 1. **Acknowledge the request**: "I understand you'd prefer [requested time]"
-2. **Explain unavailability**: "Unfortunately, that slot is already booked"
-3. **Offer alternatives**: "I have these available times nearby: [list 2-3 options]"
-4. **Ask for preference**: "Which of these would work better for you?"
+1. **Explain unavailability**: "Unfortunately, that slot is already booked"
+1. **Offer alternatives**: "I have these available times nearby: [list 2-3 options]"
+1. **Ask for preference**: "Which of these would work better for you?"
 
 ## OFF-TOPIC CONVERSATION MANAGEMENT
 
 ### First Redirect (Gentle)
+
 "I'd be happy to help with that, but I'm specifically designed to assist with appointment scheduling. Let's get you booked first - what type of appointment are you looking to schedule?"
 
 ### Second Redirect (Firmer)
+
 "I understand you have other questions, but my expertise is really in scheduling appointments. Once you're booked, your doctor or our clinical staff can address those concerns during your visit. Shall we find you an appointment time?"
 
 ### Third Redirect (Offer Human Help)
+
 "I can see you have questions beyond scheduling. Would you like me to connect you with one of our patient representatives who can better assist you with those concerns?"
 
 ## RESPONSE FORMAT
+
 Always respond in JSON format with:
 {
-  "content": "Your response message here",
-  "actions": [
-    {"type": "button", "text": "Button text", "action": "action_type", "data": "action_data"}
-  ]
+"content": "Your response message here",
+"actions": [
+{"type": "button", "text": "Button text", "action": "action_type", "data": "action_data"}
+]
 }
 
 Actions can be:
+
 - select_doctor (data: doctor_id)
 - select_specialty (data: specialty_name)
 - book_time (data: "doctor_id,date,time")
@@ -139,6 +150,7 @@ Actions can be:
 - transfer
 
 ## CURRENT DATABASE CONTEXT:
+
 ${JSON.stringify(dbContext, null, 2)}
 
 Based on this information, help the patient with their scheduling needs.`;
@@ -161,18 +173,21 @@ Based on this information, help the patient with their scheduling needs.`;
     };
 
     try {
-        const command = new InvokeModelCommand({
-            modelId: "us.amazon.nova-micro-v1:0", // Nova Micro model
-            contentType: "application/json",
-            accept: "application/json",
-            body: JSON.stringify(payload)
-        });
+        const response = await axios.post(
+            `${BEDROCK_API_BASE}/model/us.amazon.nova-micro-v1:0/invoke`,
+            payload,
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'Authorization': `Bearer ${BEARER_TOKEN}`
+                },
+                timeout: 30000 // 30 second timeout
+            }
+        );
 
-        const response = await bedrockClient.send(command);
-        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-        
-        // Extract the AI response
-        const aiResponse = responseBody.output.message.content[0].text;
+        // Extract the AI response from the API response
+        const aiResponse = response.data.output.message.content[0].text;
         
         // Try to parse as JSON, fallback to simple response if it fails
         try {
@@ -186,7 +201,7 @@ Based on this information, help the patient with their scheduling needs.`;
         }
         
     } catch (error) {
-        console.error('Error calling Bedrock:', error);
+        console.error('Error calling Bedrock via Bearer Token:', error.response?.data || error.message);
         
         // Fallback to simple response if Bedrock fails
         return generateFallbackResponse(userMessage, dbContext);
@@ -196,7 +211,7 @@ Based on this information, help the patient with their scheduling needs.`;
 // Fallback response function if Bedrock is unavailable
 function generateFallbackResponse(userInput, dbContext) {
     const input = userInput.toLowerCase();
-    
+
     if (input.includes('appointment') || input.includes('schedule') || input.includes('book')) {
         const actions = dbContext.doctors.slice(0, 4).map(doc => ({
             type: 'button',
@@ -210,7 +225,7 @@ function generateFallbackResponse(userInput, dbContext) {
             actions: actions
         };
     }
-    
+
     return {
         content: "I'm here to help you schedule medical appointments. You can ask me to book with specific doctors, check availability for certain dates, or browse by specialty. What would you like to do?",
         actions: []
@@ -222,13 +237,13 @@ async function getDatabaseContext() {
     try {
         // Get available doctors
         const doctorsQuery = `
-            SELECT id, name, specialty, office_location
+            SELECT id, name, specialty, office_location 
             FROM doctors 
             WHERE is_active = true 
             ORDER BY name
         `;
         const doctorsResult = await pool.query(doctorsQuery);
-        
+
         // Get today's date for context
         const today = new Date().toISOString().split('T')[0];
         const tomorrow = new Date();
@@ -294,7 +309,7 @@ async function getDatabaseContext() {
 // API endpoint for booking appointments
 app.post('/api/book-appointment', async (req, res) => {
     const { patientName, email, phone, doctorId, appointmentTypeId, appointmentDate, appointmentTime, reasonForVisit } = req.body;
-    
+
     try {
         // Check if time slot is available
         const availability = await checkTimeSlotAvailability(doctorId, appointmentDate, appointmentTime);
@@ -335,21 +350,21 @@ app.post('/api/book-appointment', async (req, res) => {
     }
 });
 
-// Database helper functions (keeping existing ones)
+// Database helper functions
 async function checkTimeSlotAvailability(doctorId, date, time) {
     const query = `
-        SELECT 
-            CASE 
+        SELECT
+            CASE
                 WHEN COUNT(*) = 0 THEN true
                 ELSE false
             END as available
         FROM (
-            SELECT 1 FROM appointments 
-            WHERE doctor_id = $1 
-            AND appointment_date = $2 
+            SELECT 1 FROM appointments
+            WHERE doctor_id = $1
+            AND appointment_date = $2
             AND appointment_time = $3
             AND status IN ('scheduled', 'confirmed')
-            
+
             UNION ALL
             
             SELECT 1 FROM blocked_slots
@@ -358,23 +373,23 @@ async function checkTimeSlotAvailability(doctorId, date, time) {
             AND $3 BETWEEN start_time AND end_time
         ) conflicts
     `;
-    
+
     const result = await pool.query(query, [doctorId, date, time]);
     return { available: result.rows[0].available };
 }
 
 async function findOrCreateUser(name, email, phone) {
     let result = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-    
+
     if (result.rows.length > 0) {
         return result.rows[0].id;
     }
-    
+
     result = await pool.query(
         'INSERT INTO users (name, email, phone) VALUES ($1, $2, $3) RETURNING id',
         [name, email, phone]
     );
-    
+
     return result.rows[0].id;
 }
 
@@ -383,23 +398,23 @@ async function bookAppointment({ userId, doctorId, appointmentTypeId, appointmen
         INSERT INTO appointments (
             user_id, doctor_id, appointment_type_id, 
             appointment_date, appointment_time, reason_for_visit, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, 'scheduled')
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'scheduled') 
         RETURNING id, confirmation_number
     `;
-    
+
     const result = await pool.query(query, [
         userId, doctorId, appointmentTypeId || 1, 
         appointmentDate, appointmentTime, reasonForVisit
     ]);
-    
+
     return result.rows[0];
 }
 
 async function getSuggestedAlternatives(doctorId, preferredDate) {
     // Simple implementation - you can enhance this
     const query = `
-        SELECT DISTINCT
-            da.start_time,
+        SELECT DISTINCT 
+            da.start_time, 
             (CURRENT_DATE + INTERVAL '1 day' * generate_series(0, 6)) as available_date
         FROM doctor_availability da
         WHERE da.doctor_id = $1
@@ -407,7 +422,7 @@ async function getSuggestedAlternatives(doctorId, preferredDate) {
         ORDER BY available_date, start_time
         LIMIT 5
     `;
-    
+
     const result = await pool.query(query, [doctorId]);
     return result.rows;
 }
@@ -415,6 +430,6 @@ async function getSuggestedAlternatives(doctorId, preferredDate) {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🏥 Medical Scheduler running at http://0.0.0.0:${PORT}`);
     console.log(`📅 Ready to schedule appointments with AI!`);
-    console.log(`🤖 AWS Bedrock Nova Micro integration enabled`);
+    console.log(`🤖 AWS Bedrock Bearer Token integration enabled`);
     console.log(`🌐 Access externally at: http://YOUR-EC2-PUBLIC-IP:${PORT}`);
 });
