@@ -129,7 +129,7 @@ async function generateAIResponse(userMessage, dbContext) {
 	Use the EXACT data format shown above. Do NOT create nested objects or arrays.`;
 
 Keep responses short and focused. If user asks about non-medical topics, politely redirect to appointment scheduling only.
-`;
+`; 
 
         console.log('📦 Building payload...');
         const payload = {
