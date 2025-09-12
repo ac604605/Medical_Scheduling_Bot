@@ -161,16 +161,15 @@ Based on this information, help the patient with their scheduling needs.`;
                 role: "user",
                 content: [
                     {
-                        type: "text",
-                        text: `${systemPrompt}\n\nPatient message: "${userMessage}"`
+                        text: `${systemPrompt}\n\nPatient message: "${userMessage}"` // Just "text"
                     }
                 ]
             }
         ],
         inferenceConfig: {
-			max_tokens: 1000,
+			maxTokens: 1000,
 			temperature: 0.7,
-			top_p: 0.9
+			topP: 0.9
 		}
     };
 
