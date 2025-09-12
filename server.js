@@ -118,7 +118,7 @@ async function generateAIResponse(userMessage, dbContext) {
 
 	Example: {"type": "select_date", "text": "Tuesday 2:00 PM", "data": "1,2025-09-16,14:00:00"}
 
-	## CURRENT DATA
+## CURRENT DATA
 	Doctors: ${JSON.stringify(dbContext.doctors, null, 2)}
 	Available appointments: ${JSON.stringify(dbContext.upcoming_availability.slice(0, 10), null, 2)}
 
@@ -127,9 +127,6 @@ async function generateAIResponse(userMessage, dbContext) {
 	{"type": "select_date", "text": "Tomorrow 1:00 PM", "data": "1,2025-09-13,13:00:00"}
 
 	Use the EXACT data format shown above. Do NOT create nested objects or arrays.`;
-
-## CURRENT DATA
-Doctors: ${JSON.stringify(dbContext.doctors, null, 2)}
 
 Keep responses short and focused. If user asks about non-medical topics, politely redirect to appointment scheduling only.`;
 
