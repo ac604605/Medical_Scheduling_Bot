@@ -179,6 +179,7 @@ Keep responses short and focused. If user asks about non-medical topics, politel
         try {
             const parsed = JSON.parse(aiRaw);
             console.log('✅ Successfully parsed AI JSON response');
+			consol.log('AI Actions:', JSON.stringify(parsed.actions, null, 2));
             return parsed;
         } catch (parseError) {
             console.log('⚠️ AI response not JSON, using fallback. Raw response:', aiRaw);
@@ -314,8 +315,15 @@ app.post('/api/select-doctor', async (req, res) => {
 });
 
 app.post('/api/select-appointment', async (req, res) => {
+	console.log('Appointment selction received:', req.body);
+	console.log('Raw appointmentData:', req.body.appointmentData);
+	
     const { appointmentData } = req.body; // Format: "doctorId,date,time"
-    const [doctorId, date, time] = appointmentData.split(','); // Fixed order
+    const splitData = appointmentData.split(',');
+	console.log('Split data;', splitData);
+	
+	const [doctorId, date, time] = splitData;
+	console.log('Parsed - Doctor ID:', doctor Id, 'Date:', date, 'Time:', time);
     
     try {
         const dbContext = await getDatabaseContext();
