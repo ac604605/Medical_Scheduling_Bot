@@ -118,52 +118,52 @@ class ChatInterface {
     }
     
     async handleActionClick(button) {
-		// Prevent Multiple clicks
-		if (button.disabled) return:
-		
-        const actionType = button.getAttribute('data-type');
-        const actionData = button.getAttribute('data-data');
-        
-        // Disable the button to prevent double-clicks
-        documenet.querySelectorAll('.action-btn').forEach(btn => {
+		// Prevent multiple clicks
+		if (button.disabled) return;
+    
+		const actionType = button.getAttribute('data-type');
+		const actionData = button.getAttribute('data-data');
+    
+		// Disable the button to prevent double-clicks
+		document.querySelectorAll('.action-btn').forEach(btn => {
 			btn.disabled = true;
 			if (btn === button) btn.textContent = 'Processing...';
-        });
+		});
+    
+		try {
+			let response;
         
-        try {
-            let response;
-            
-            if (actionType === 'select_doctor') {
-                response = await fetch('/api/select-doctor', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ doctorId: actionData })
-                });
-            } else if (actionType === 'select_date') {
-                response = await fetch('/api/select-appointment', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ appointmentData: actionData })
-                });
-            } else {
-                // For other action types, treat as a regular message
-                this.sendMessage(button.textContent);
-                return;
-            }
-            
-            const data = await response.json();
-            
-            if (data.success && data.response) {
-                this.addBotResponse(data.response);
-            } else {
-                this.addMessage(data.message || 'Sorry, something went wrong.', 'bot');
-            }
-            
-        } catch (error) {
-            console.error('Action error:', error);
-            this.addMessage('Sorry, I encountered an error processing your request.', 'bot');
-        }
-    }
+			if (actionType === 'select_doctor') {
+				response = await fetch('/api/select-doctor', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ doctorId: actionData })
+				});
+			} else if (actionType === 'select_date') {
+				response = await fetch('/api/select-appointment', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ appointmentData: actionData })
+				});
+			} else {
+				// For other action types, treat as a regular message
+				this.sendMessage(button.textContent);
+				return;
+			}
+        
+			const data = await response.json();
+        
+			if (data.success && data.response) {
+				this.addBotResponse(data.response);
+			} else {
+				this.addMessage(data.message || 'Sorry, something went wrong.', 'bot');
+			}
+        
+		} catch (error) {
+			console.error('Action error:', error);
+			this.addMessage('Sorry, I encountered an error processing your request.', 'bot');
+	}
+	}
     
     showTypingIndicator() {
         this.typingIndicator.style.display = 'block';
