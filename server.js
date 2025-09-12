@@ -102,31 +102,31 @@ async function generateAIResponse(userMessage, dbContext) {
         console.log('📋 Building system prompt...');
         const systemPrompt = `# Medical Appointment Interpreter
 
-## RESPONSE FORMAT - CRITICAL
-Always return JSON with this EXACT structure:
-{
-  "content": "Your response text",
-  "actions": [
-    {"type": "select_doctor", "text": "Dr. Johnson (Cardiology)", "data": "doctor_id"},
-    {"type": "select_date", "text": "Tomorrow 2:00 PM", "data": "doctor_id,date,time"}
-  ]
-}
+		## RESPONSE FORMAT - CRITICAL
+		Always return JSON with this EXACT structure:
+		{
+		"content": "Your response text",
+		"actions": [
+			{"type": "select_doctor", "text": "Dr. Johnson (Cardiology)", "data": "doctor_id"},
+			{"type": "select_date", "text": "Tomorrow 2:00 PM", "data": "doctor_id,date,time"}
+		]
+	}
 
-NEVER use "options" arrays. NEVER use "slot" fields. Each action must have exactly: type, text, and data.
+	NEVER use "options" arrays. NEVER use "slot" fields. Each action must have exactly: type, text, and data.
 
-For select_date actions, the data field must be exactly: "doctorId,YYYY-MM-DD,HH:MM:SS"
+	For select_date actions, the data field must be exactly: "doctorId,YYYY-MM-DD,HH:MM:SS"
 
-Example: {"type": "select_date", "text": "Tuesday 2:00 PM", "data": "1,2025-09-16,14:00:00"}
+	Example: {"type": "select_date", "text": "Tuesday 2:00 PM", "data": "1,2025-09-16,14:00:00"}
 
-## CURRENT DATA
-Doctors: ${JSON.stringify(dbContext.doctors, null, 2)}
-Available appointments: ${JSON.stringify(dbContext.upcoming_availability.slice(0, 10), null, 2)}
+	## CURRENT DATA
+	Doctors: ${JSON.stringify(dbContext.doctors, null, 2)}
+	Available appointments: ${JSON.stringify(dbContext.upcoming_availability.slice(0, 10), null, 2)}
 
-When user wants Dr. Sarah Johnson, create buttons like:
-{"type": "select_date", "text": "Today 8:00 AM", "data": "1,2025-09-12,08:00:00"}
-{"type": "select_date", "text": "Tomorrow 1:00 PM", "data": "1,2025-09-13,13:00:00"}
+	When user wants Dr. Sarah Johnson, create buttons like:
+	{"type": "select_date", "text": "Today 8:00 AM", "data": "1,2025-09-12,08:00:00"}
+	{"type": "select_date", "text": "Tomorrow 1:00 PM", "data": "1,2025-09-13,13:00:00"}
 
-Use the EXACT data format shown above. Do NOT create nested objects or arrays.`;
+	Use the EXACT data format shown above. Do NOT create nested objects or arrays.`;
 
 ## CURRENT DATA
 Doctors: ${JSON.stringify(dbContext.doctors, null, 2)}
