@@ -118,12 +118,17 @@ class ChatInterface {
     }
     
     async handleActionClick(button) {
+		// Prevent Multiple clicks
+		if (button.disabled) return:
+		
         const actionType = button.getAttribute('data-type');
         const actionData = button.getAttribute('data-data');
         
         // Disable the button to prevent double-clicks
-        button.disabled = true;
-        button.textContent = 'Processing...';
+        documenet.querySelectorAll('.action-btn').forEach(btn => {
+			btn.disabled = true;
+			if (btn === button) btn.textContent = 'Processing...';
+        });
         
         try {
             let response;

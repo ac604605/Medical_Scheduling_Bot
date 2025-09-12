@@ -313,10 +313,9 @@ app.post('/api/select-doctor', async (req, res) => {
     }
 });
 
-// Add handler for when user selects a date/time
 app.post('/api/select-appointment', async (req, res) => {
     const { appointmentData } = req.body; // Format: "doctorId,date,time"
-    const [doctorId, date, time] = appointmentData.split(',');
+    const [doctorId, date, time] = appointmentData.split(','); // Fixed order
     
     try {
         const dbContext = await getDatabaseContext();
@@ -330,7 +329,7 @@ app.post('/api/select-appointment', async (req, res) => {
                 message: 'Sorry, that appointment time is no longer available.',
                 response: {
                     content: 'That time slot was just taken. Let me show you other available times.',
-                    actions: [] // Could populate with alternatives
+                    actions: []
                 }
             });
         }
@@ -338,11 +337,11 @@ app.post('/api/select-appointment', async (req, res) => {
         res.json({
             success: true,
             response: {
-                content: `Great choice! You've selected:\n\n📅 ${formatDate(date)} at ${formatTime(time)}\n👩‍⚕️ Dr. ${doctor.name} (${doctor.specialty})\n\nPlease provide your contact information to complete the booking:`,
+                content: `Great choice! You've selected:\n\n📅 ${formatDate(date)} at ${formatTime(time)}\n👩‍⚕️ ${doctor.name} (${doctor.specialty})\n\nPlease provide your contact information to complete the booking:`,
                 actions: [{
                     type: 'collect_info',
                     text: 'Continue to Book',
-                    data: appointmentData
+                    data: appointmentData // Fixed - use the same data
                 }]
             }
         });
