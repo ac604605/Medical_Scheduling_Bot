@@ -6,7 +6,7 @@ require('dotenv').config();
 
 const app = express();
 // ⚡ Changed default port to 3000 (running on 80 requires sudo/root)
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 80;
 
 // --- Bearer token configuration ---
 const BEDROCK_API_BASE = process.env.BEDROCK_API_BASE || 'https://bedrock-runtime.us-east-1.amazonaws.com';
