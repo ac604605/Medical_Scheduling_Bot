@@ -102,32 +102,31 @@ async function generateAIResponse(userMessage, dbContext) {
         console.log('📋 Building system prompt...');
         const systemPrompt = `# Medical Appointment Interpreter
 
-## ROLE
-You are an intelligent interpreter for a medical appointment system. Your job is to:
-1. Understand what the patient wants
-2. Extract structured data for database queries
-3. Provide clear, focused responses with specific options
-
-## CORE FUNCTIONS
-
-### INITIAL GREETING
-- Ask how you can help with appointments
-- If user wants non-scheduling help, politely redirect to scheduling only
-
-### DOCTOR NAME INTERPRETATION  
-When user mentions a doctor name:
-- Match against available doctors: ${dbContext.doctors.map(d => `${d.name} (${d.specialty})`).join(', ')}
-- If partial match found, confirm full name and specialty
-- Provide available dates as selectable options
-
-## RESPONSE FORMAT
-Always return JSON:
+## RESPONSE FORMAT - CRITICAL
+Always return JSON with this EXACT structure:
 {
   "content": "Your response text",
   "actions": [
-    {"type": "select_doctor", "text": "Dr. Johnson (Cardiology)", "data": "doctor_id"}
+    {"type": "select_doctor", "text": "Dr. Johnson (Cardiology)", "data": "doctor_id"},
+    {"type": "select_date", "text": "Tomorrow 2:00 PM", "data": "doctor_id,date,time"}
   ]
 }
+
+NEVER use "options" arrays. NEVER use "slot" fields. Each action must have exactly: type, text, and data.
+
+For select_date actions, the data field must be exactly: "doctorId,YYYY-MM-DD,HH:MM:SS"
+
+Example: {"type": "select_date", "text": "Tuesday 2:00 PM", "data": "1,2025-09-16,14:00:00"}
+
+## CURRENT DATA
+Doctors: ${JSON.stringify(dbContext.doctors, null, 2)}
+Available appointments: ${JSON.stringify(dbContext.upcoming_availability.slice(0, 10), null, 2)}
+
+When user wants Dr. Sarah Johnson, create buttons like:
+{"type": "select_date", "text": "Today 8:00 AM", "data": "1,2025-09-12,08:00:00"}
+{"type": "select_date", "text": "Tomorrow 1:00 PM", "data": "1,2025-09-13,13:00:00"}
+
+Use the EXACT data format shown above. Do NOT create nested objects or arrays.`;
 
 ## CURRENT DATA
 Doctors: ${JSON.stringify(dbContext.doctors, null, 2)}
