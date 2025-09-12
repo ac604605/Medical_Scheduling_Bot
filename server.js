@@ -84,27 +84,36 @@ function extractTextFromBedrockResponse(resp) {
         return null;
     }
 }
-
+// Add this function before generateAIResponse
+function extractTextFromBedrockResponse(response) {
+    try {
+        return response.data.output.message.content[0].text;
+    } catch (error) {
+        console.error('Error extracting text from Bedrock response:', error);
+        return null;
+    }
+}
 // --- AI response function ---
 async function generateAIResponse(userMessage, dbContext) {
     const systemPrompt = `# Medical Scheduling Assistant System Prompt ... (same as before) ...\n\n## CURRENT DATABASE CONTEXT:\n${JSON.stringify(dbContext, null, 2)}`;
 
     const payload = {
-        messages: [
-            {
-                role: 'user',
-                content: JSON.stringify({
-                    prompt: systemPrompt,
-                    patient_message: userMessage
-                })
-            }
-        ],
-        inferenceConfig: {
-            maxTokens: 1000,
-            temperature: 0.7,
-            topP: 0.9
-        }
-    };
+		messages: [
+			{
+				role: "user",
+				content: [
+					{
+						text: `${systemPrompt}\n\nPatient message: "${userMessage}"`
+					}
+				]
+			}
+		],
+		inferenceConfig: {
+			maxTokens: 1000,
+			temperature: 0.7,
+			topP: 0.9
+		}
+	};
 
     try {
         const response = await axios.post(
