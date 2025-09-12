@@ -1,183 +1,187 @@
+// Chat functionality for Medical Scheduler
 class ChatInterface {
     constructor() {
-        this.messages = [];
-        this.init();
-    }
-
-    init() {
-        this.chatMessages = document.getElementById('chatMessages');
         this.messageInput = document.getElementById('messageInput');
         this.sendBtn = document.getElementById('sendBtn');
+        this.chatMessages = document.getElementById('chatMessages');
         this.typingIndicator = document.getElementById('typingIndicator');
-
-        // Event listeners
+        
+        this.initializeEventListeners();
+    }
+    
+    initializeEventListeners() {
+        // Send button click
         this.sendBtn.addEventListener('click', () => this.sendMessage());
+        
+        // Enter key press
         this.messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.sendMessage();
-        });
-
-        // Quick action buttons
-        document.querySelectorAll('.quick-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                this.messageInput.value = btn.dataset.message;
+            if (e.key === 'Enter') {
                 this.sendMessage();
-            });
-        });
-
-        // Input state management
-        this.messageInput.addEventListener('input', () => {
-            this.sendBtn.disabled = !this.messageInput.value.trim();
+            }
         });
         
-        this.sendBtn.disabled = true;
+        // Quick action buttons
+        document.querySelectorAll('.quick-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const message = e.target.getAttribute('data-message');
+                this.sendMessage(message);
+            });
+        });
     }
-
-    async sendMessage() {
-        const message = this.messageInput.value.trim();
+    
+    async sendMessage(text = null) {
+        const message = text || this.messageInput.value.trim();
         if (!message) return;
-
-        // Add user message to UI
-        this.addMessage('user', message);
-        this.messageInput.value = '';
-        this.sendBtn.disabled = true;
-
+        
+        // Clear input
+        if (!text) this.messageInput.value = '';
+        
+        // Add user message to chat
+        this.addMessage(message, 'user');
+        
         // Show typing indicator
         this.showTypingIndicator();
-
+        
         try {
-            // Send message to server
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ message })
             });
-
+            
             const data = await response.json();
-
-            if (data.success) {
-                // Hide typing indicator and show bot response
-                this.hideTypingIndicator();
-                this.addMessage('bot', data.response.content, data.response.actions);
+            
+            if (data.success && data.response) {
+                this.addBotResponse(data.response);
             } else {
-                throw new Error('Failed to get response');
+                this.addMessage('Sorry, I encountered an error. Please try again.', 'bot');
             }
         } catch (error) {
-            console.error('Error sending message:', error);
+            console.error('Chat error:', error);
+            this.addMessage('Sorry, I encountered an error. Please try again.', 'bot');
+        } finally {
             this.hideTypingIndicator();
-            this.addMessage('bot', 'Sorry, I encountered an error. Please try again.');
         }
     }
-
-    addMessage(type, content, actions = null) {
+    
+    addMessage(text, sender) {
         const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${type}-message`;
-
-        const messageContent = document.createElement('div');
-        messageContent.className = 'message-content';
-
-        const messageParagraph = document.createElement('p');
-        messageParagraph.textContent = content;
-
-        const messageTime = document.createElement('span');
-        messageTime.className = 'message-time';
-        messageTime.textContent = this.formatTime(new Date());
-
-        messageContent.appendChild(messageParagraph);
-        messageContent.appendChild(messageTime);
-
-        // Add action buttons if they exist
-        if (actions && actions.length > 0) {
-            const actionsDiv = document.createElement('div');
-            actionsDiv.className = 'message-actions';
-
-            actions.forEach(action => {
-                const button = document.createElement('button');
-                button.className = 'action-btn';
-                button.textContent = action.text;
-                button.addEventListener('click', () => this.handleActionClick(action));
-                actionsDiv.appendChild(button);
-            });
-
-            messageContent.appendChild(actionsDiv);
-        }
-
-        messageDiv.appendChild(messageContent);
+        messageDiv.className = `message ${sender}-message`;
+        
+        const timestamp = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        
+        messageDiv.innerHTML = `
+            <div class="message-content">
+                <p>${this.escapeHtml(text)}</p>
+                <span class="message-time">${timestamp}</span>
+            </div>
+        `;
+        
         this.chatMessages.appendChild(messageDiv);
-        
         this.scrollToBottom();
-
-        // Re-initialize Lucide icons for any new icons
-        if (typeof lucide !== 'undefined') {
-            lucide.createIcons();
-        }
     }
-
-    handleActionClick(action) {
-        let responseMessage = '';
+    
+    addBotResponse(response) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message bot-message';
         
-        switch (action.action) {
-            case 'consultation':
-                this.addMessage('user', 'I need a consultation');
-                break;
-            case 'followup':
-                this.addMessage('user', 'I need a follow-up visit');
-                break;
-            case 'procedure':
-                this.addMessage('user', 'I need to schedule a procedure');
-                break;
-            case 'book_time':
-                responseMessage = `I'd like to book ${action.text}`;
-                this.addMessage('user', responseMessage);
-                this.simulateBotResponse('Perfect! I\'ve reserved that time slot for you. To complete your booking, I\'ll need some basic information. Can you provide your full name and email address?');
+        const timestamp = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        
+        let actionsHtml = '';
+        if (response.actions && response.actions.length > 0) {
+            actionsHtml = '<div class="message-actions">';
+            response.actions.forEach(action => {
+                actionsHtml += `
+                    <button class="action-btn" 
+                            data-type="${action.type}" 
+                            data-data="${action.data}"
+                            onclick="chatInterface.handleActionClick(this)">
+                        ${this.escapeHtml(action.text)}
+                    </button>
+                `;
+            });
+            actionsHtml += '</div>';
+        }
+        
+        messageDiv.innerHTML = `
+            <div class="message-content">
+                <p>${this.escapeHtml(response.content)}</p>
+                <span class="message-time">${timestamp}</span>
+            </div>
+            ${actionsHtml}
+        `;
+        
+        this.chatMessages.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+    
+    async handleActionClick(button) {
+        const actionType = button.getAttribute('data-type');
+        const actionData = button.getAttribute('data-data');
+        
+        // Disable the button to prevent double-clicks
+        button.disabled = true;
+        button.textContent = 'Processing...';
+        
+        try {
+            let response;
+            
+            if (actionType === 'select_doctor') {
+                response = await fetch('/api/select-doctor', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ doctorId: actionData })
+                });
+            } else if (actionType === 'select_date') {
+                response = await fetch('/api/select-appointment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ appointmentData: actionData })
+                });
+            } else {
+                // For other action types, treat as a regular message
+                this.sendMessage(button.textContent);
                 return;
-            case 'more_times':
-                responseMessage = 'Show me more available times';
-                break;
-            case 'callback':
-                responseMessage = 'I\'d like to schedule a callback';
-                break;
-            case 'live_chat':
-                responseMessage = 'Connect me to live chat';
-                break;
-            default:
-                responseMessage = action.text;
-        }
-        
-        if (responseMessage) {
-            this.messageInput.value = responseMessage;
-            this.sendMessage();
+            }
+            
+            const data = await response.json();
+            
+            if (data.success && data.response) {
+                this.addBotResponse(data.response);
+            } else {
+                this.addMessage(data.message || 'Sorry, something went wrong.', 'bot');
+            }
+            
+        } catch (error) {
+            console.error('Action error:', error);
+            this.addMessage('Sorry, I encountered an error processing your request.', 'bot');
         }
     }
-
-    simulateBotResponse(message, actions = null) {
-        this.showTypingIndicator();
-        setTimeout(() => {
-            this.hideTypingIndicator();
-            this.addMessage('bot', message, actions);
-        }, 1000);
-    }
-
+    
     showTypingIndicator() {
-        this.typingIndicator.style.display = 'flex';
+        this.typingIndicator.style.display = 'block';
         this.scrollToBottom();
     }
-
+    
     hideTypingIndicator() {
         this.typingIndicator.style.display = 'none';
     }
-
+    
     scrollToBottom() {
         this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
     }
-
-    formatTime(date) {
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
 
 // Initialize chat interface when page loads
+let chatInterface;
 document.addEventListener('DOMContentLoaded', () => {
-    new ChatInterface();
+    chatInterface = new ChatInterface();
 });
