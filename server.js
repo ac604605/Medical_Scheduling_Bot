@@ -801,7 +801,7 @@ END:VALARM
 END:VEVENT
 END:VCALENDAR`;
 }
-}
+
 // --- Start server ---
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🏥 Medical Scheduler running at http://0.0.0.0:${PORT}`);
