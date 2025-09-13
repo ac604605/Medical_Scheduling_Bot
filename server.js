@@ -84,15 +84,7 @@ function extractTextFromBedrockResponse(resp) {
         return null;
     }
 }
-// Add this function before generateAIResponse
-function extractTextFromBedrockResponse(response) {
-    try {
-        return response.data.output.message.content[0].text;
-    } catch (error) {
-        console.error('Error extracting text from Bedrock response:', error);
-        return null;
-    }
-}
+
 // --- AI response function ---
 // Replace your generateAIResponse function with this smart interpreter approach
 async function generateAIResponse(userMessage, dbContext) {
@@ -273,41 +265,6 @@ function formatTime(timeStr) {
     const ampm = hours >= 12 ? 'PM' : 'AM';
     return `${hour12}:${minutes} ${ampm}`;
 }
-
-// Add handler for when user selects a doctor (add this as a new endpoint)
-app.post('/api/select-doctor', async (req, res) => {
-    const { doctorId } = req.body;
-    
-    try {
-        const dbContext = await getDatabaseContext();
-        const doctor = dbContext.doctors.find(d => d.id == doctorId);
-        
-        if (!doctor) {
-            return res.status(404).json({ success: false, message: 'Doctor not found' });
-        }
-        
-        const availableTimes = dbContext.upcoming_availability
-            .filter(slot => slot.doctor_id == doctorId)
-            .slice(0, 8)
-            .map(slot => ({
-                type: 'select_date',
-                text: `${formatDate(slot.available_date)} at ${formatTime(slot.start_time)}`,
-                data: `${slot.doctor_id},${slot.available_date},${slot.start_time}`
-            }));
-            
-        res.json({
-            success: true,
-            response: {
-                content: `Perfect! Dr. ${doctor.name} (${doctor.specialty}) has these available appointments:`,
-                actions: availableTimes
-            }
-        });
-        
-    } catch (error) {
-        console.error('Error selecting doctor:', error);
-        res.status(500).json({ success: false, message: 'Error retrieving doctor availability' });
-    }
-});
 
 app.post('/api/select-appointment', async (req, res) => {
 	console.log('Appointment selction received:', req.body);
