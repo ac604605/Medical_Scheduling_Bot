@@ -775,7 +775,415 @@ END:VCALENDAR`;
         throw error;
     }
 }
+// Add these admin routes to your existing server.js
 
+// =========================
+// ADMIN DASHBOARD ROUTES
+// =========================
+
+// Admin dashboard home page
+app.get('/admin', (req, res) => {
+    res.render('admin/dashboard', {
+        title: 'Admin Dashboard',
+        subtitle: 'Healthcare Management System'
+    });
+});
+
+// =========================
+// DOCTOR MANAGEMENT APIs
+// =========================
+
+// Get all doctors (with pagination)
+app.get('/api/admin/doctors', async (req, res) => {
+    const { page = 1, limit = 10, search = '' } = req.query;
+    const offset = (page - 1) * limit;
+    
+    try {
+        let query = `
+            SELECT d.*, 
+                   COUNT(a.id) as total_appointments,
+                   COUNT(CASE WHEN a.appointment_date >= CURRENT_DATE THEN 1 END) as upcoming_appointments
+            FROM doctors d
+            LEFT JOIN appointments a ON d.id = a.doctor_id
+        `;
+        
+        let params = [];
+        if (search) {
+            query += ` WHERE d.name ILIKE $1 OR d.specialty ILIKE $1`;
+            params.push(`%${search}%`);
+        }
+        
+        query += ` GROUP BY d.id ORDER BY d.name LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        params.push(limit, offset);
+        
+        const doctors = await pool.query(query, params);
+        
+        // Get total count for pagination
+        let countQuery = `SELECT COUNT(*) FROM doctors d`;
+        let countParams = [];
+        if (search) {
+            countQuery += ` WHERE d.name ILIKE $1 OR d.specialty ILIKE $1`;
+            countParams.push(`%${search}%`);
+        }
+        
+        const total = await pool.query(countQuery, countParams);
+        
+        res.json({
+            success: true,
+            data: doctors.rows,
+            pagination: {
+                total: parseInt(total.rows[0].count),
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: Math.ceil(total.rows[0].count / limit)
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching doctors:', error);
+        res.status(500).json({ success: false, message: 'Error fetching doctors' });
+    }
+});
+
+// Create new doctor
+app.post('/api/admin/doctors', async (req, res) => {
+    const { name, specialty, office_location, email, phone } = req.body;
+    
+    // Input validation
+    if (!name || !specialty) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Name and specialty are required' 
+        });
+    }
+    
+    try {
+        const query = `
+            INSERT INTO doctors (name, specialty, office_location, email, phone, is_active)
+            VALUES ($1, $2, $3, $4, $5, true)
+            RETURNING *
+        `;
+        
+        const result = await pool.query(query, [name, specialty, office_location, email, phone]);
+        
+        res.json({
+            success: true,
+            message: 'Doctor created successfully',
+            data: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Error creating doctor:', error);
+        if (error.code === '23505') { // Unique constraint violation
+            res.status(400).json({ success: false, message: 'Doctor with this email already exists' });
+        } else {
+            res.status(500).json({ success: false, message: 'Error creating doctor' });
+        }
+    }
+});
+
+// Update doctor
+app.put('/api/admin/doctors/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, specialty, office_location, email, phone, is_active } = req.body;
+    
+    try {
+        const query = `
+            UPDATE doctors 
+            SET name = $1, specialty = $2, office_location = $3, email = $4, phone = $5, is_active = $6, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $7
+            RETURNING *
+        `;
+        
+        const result = await pool.query(query, [name, specialty, office_location, email, phone, is_active, id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Doctor not found' });
+        }
+        
+        res.json({
+            success: true,
+            message: 'Doctor updated successfully',
+            data: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Error updating doctor:', error);
+        res.status(500).json({ success: false, message: 'Error updating doctor' });
+    }
+});
+
+// Delete doctor (soft delete)
+app.delete('/api/admin/doctors/:id', async (req, res) => {
+    const { id } = req.params;
+    
+    try {
+        // Check if doctor has future appointments
+        const appointmentCheck = await pool.query(
+            `SELECT COUNT(*) FROM appointments WHERE doctor_id = $1 AND appointment_date >= CURRENT_DATE AND status IN ('scheduled', 'confirmed')`,
+            [id]
+        );
+        
+        if (parseInt(appointmentCheck.rows[0].count) > 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Cannot delete doctor with upcoming appointments' 
+            });
+        }
+        
+        // Soft delete
+        const result = await pool.query(
+            `UPDATE doctors SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
+            [id]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Doctor not found' });
+        }
+        
+        res.json({
+            success: true,
+            message: 'Doctor deactivated successfully'
+        });
+    } catch (error) {
+        console.error('Error deleting doctor:', error);
+        res.status(500).json({ success: false, message: 'Error deleting doctor' });
+    }
+});
+
+// =========================
+// APPOINTMENT MANAGEMENT APIs
+// =========================
+
+// Get all appointments with filters
+app.get('/api/admin/appointments', async (req, res) => {
+    const { 
+        page = 1, 
+        limit = 20, 
+        status = '', 
+        doctor_id = '', 
+        date_from = '', 
+        date_to = '',
+        search = ''
+    } = req.query;
+    
+    const offset = (page - 1) * limit;
+    
+    try {
+        let query = `
+            SELECT a.*, d.name as doctor_name, d.specialty, u.name as patient_name, u.email, u.phone
+            FROM appointments a
+            JOIN doctors d ON a.doctor_id = d.id
+            JOIN users u ON a.user_id = u.id
+            WHERE 1=1
+        `;
+        
+        let params = [];
+        let paramCount = 0;
+        
+        if (status) {
+            query += ` AND a.status = $${++paramCount}`;
+            params.push(status);
+        }
+        
+        if (doctor_id) {
+            query += ` AND a.doctor_id = $${++paramCount}`;
+            params.push(doctor_id);
+        }
+        
+        if (date_from) {
+            query += ` AND a.appointment_date >= $${++paramCount}`;
+            params.push(date_from);
+        }
+        
+        if (date_to) {
+            query += ` AND a.appointment_date <= $${++paramCount}`;
+            params.push(date_to);
+        }
+        
+        if (search) {
+            query += ` AND (u.name ILIKE $${++paramCount} OR u.email ILIKE $${paramCount} OR d.name ILIKE $${paramCount})`;
+            params.push(`%${search}%`);
+        }
+        
+        query += ` ORDER BY a.appointment_date DESC, a.appointment_time DESC LIMIT $${++paramCount} OFFSET $${++paramCount}`;
+        params.push(limit, offset);
+        
+        const appointments = await pool.query(query, params);
+        
+        // Get total count
+        let countQuery = `
+            SELECT COUNT(*) FROM appointments a
+            JOIN doctors d ON a.doctor_id = d.id
+            JOIN users u ON a.user_id = u.id
+            WHERE 1=1
+        `;
+        
+        let countParams = [];
+        paramCount = 0;
+        
+        if (status) {
+            countQuery += ` AND a.status = $${++paramCount}`;
+            countParams.push(status);
+        }
+        if (doctor_id) {
+            countQuery += ` AND a.doctor_id = $${++paramCount}`;
+            countParams.push(doctor_id);
+        }
+        if (date_from) {
+            countQuery += ` AND a.appointment_date >= $${++paramCount}`;
+            countParams.push(date_from);
+        }
+        if (date_to) {
+            countQuery += ` AND a.appointment_date <= $${++paramCount}`;
+            countParams.push(date_to);
+        }
+        if (search) {
+            countQuery += ` AND (u.name ILIKE $${++paramCount} OR u.email ILIKE $${paramCount} OR d.name ILIKE $${paramCount})`;
+            countParams.push(`%${search}%`);
+        }
+        
+        const total = await pool.query(countQuery, countParams);
+        
+        res.json({
+            success: true,
+            data: appointments.rows,
+            pagination: {
+                total: parseInt(total.rows[0].count),
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: Math.ceil(total.rows[0].count / limit)
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching appointments:', error);
+        res.status(500).json({ success: false, message: 'Error fetching appointments' });
+    }
+});
+
+// Update appointment status
+app.put('/api/admin/appointments/:id/status', async (req, res) => {
+    const { id } = req.params;
+    const { status, notes } = req.body;
+    
+    const validStatuses = ['scheduled', 'confirmed', 'completed', 'cancelled', 'no-show'];
+    if (!validStatuses.includes(status)) {
+        return res.status(400).json({ success: false, message: 'Invalid status' });
+    }
+    
+    try {
+        const query = `
+            UPDATE appointments 
+            SET status = $1, notes = $2, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $3
+            RETURNING *
+        `;
+        
+        const result = await pool.query(query, [status, notes, id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Appointment not found' });
+        }
+        
+        res.json({
+            success: true,
+            message: 'Appointment status updated successfully',
+            data: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Error updating appointment:', error);
+        res.status(500).json({ success: false, message: 'Error updating appointment' });
+    }
+});
+
+// =========================
+// DASHBOARD ANALYTICS APIs
+// =========================
+
+// Get dashboard statistics
+app.get('/api/admin/stats', async (req, res) => {
+    try {
+        const stats = await Promise.all([
+            // Total doctors
+            pool.query('SELECT COUNT(*) as total FROM doctors WHERE is_active = true'),
+            
+            // Total appointments today
+            pool.query(`
+                SELECT COUNT(*) as total FROM appointments 
+                WHERE appointment_date = CURRENT_DATE
+            `),
+            
+            // Upcoming appointments (next 7 days)
+            pool.query(`
+                SELECT COUNT(*) as total FROM appointments 
+                WHERE appointment_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+                AND status IN ('scheduled', 'confirmed')
+            `),
+            
+            // Appointments by status
+            pool.query(`
+                SELECT status, COUNT(*) as count FROM appointments 
+                WHERE appointment_date >= CURRENT_DATE - INTERVAL '30 days'
+                GROUP BY status
+            `),
+            
+            // Appointments by doctor (top 5)
+            pool.query(`
+                SELECT d.name, COUNT(a.id) as appointment_count
+                FROM doctors d
+                LEFT JOIN appointments a ON d.id = a.doctor_id 
+                WHERE a.appointment_date >= CURRENT_DATE - INTERVAL '30 days'
+                GROUP BY d.id, d.name
+                ORDER BY appointment_count DESC
+                LIMIT 5
+            `)
+        ]);
+        
+        res.json({
+            success: true,
+            data: {
+                totalDoctors: parseInt(stats[0].rows[0].total),
+                todayAppointments: parseInt(stats[1].rows[0].total),
+                upcomingAppointments: parseInt(stats[2].rows[0].total),
+                appointmentsByStatus: stats[3].rows,
+                topDoctors: stats[4].rows
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching stats:', error);
+        res.status(500).json({ success: false, message: 'Error fetching statistics' });
+    }
+});
+
+// =========================
+// REAL-WORLD CONSIDERATIONS
+// =========================
+
+/*
+SECURITY CONSIDERATIONS:
+1. Authentication middleware (JWT tokens)
+2. Role-based access control
+3. Input sanitization and validation
+4. Rate limiting for admin endpoints
+5. Audit logging for all admin actions
+
+SCALABILITY CONSIDERATIONS:
+1. Database connection pooling (already implemented)
+2. Caching layer for frequently accessed data
+3. Database indexing on commonly queried fields
+4. Pagination for large datasets (implemented)
+
+PRODUCTION DEPLOYMENT:
+1. Separate admin and patient services
+2. Load balancer with SSL termination
+3. Database read replicas for reporting
+4. Monitoring and alerting
+5. Backup and disaster recovery
+
+NEXT STEPS:
+1. Add authentication middleware
+2. Create admin frontend interface
+3. Implement audit logging
+4. Add data validation schemas
+5. Set up monitoring and health checks
+*/
 // --- Start server ---
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🏥 Medical Scheduler running at http://0.0.0.0:${PORT}`);
