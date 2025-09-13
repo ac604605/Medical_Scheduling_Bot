@@ -728,7 +728,12 @@ function generateICSFile(appointment) {
     console.log('📅 Generating ICS for appointment:', appointment);
     
     try {
-        const startDateTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
+        // Fix the date parsing - appointment_date comes as a Date object from PostgreSQL
+        const appointmentDate = new Date(appointment.appointment_date);
+        const dateStr = appointmentDate.toISOString().split('T')[0]; // Get YYYY-MM-DD
+        
+        // Combine date and time properly
+        const startDateTime = new Date(`${dateStr}T${appointment.appointment_time}`);
         console.log('📅 Start datetime:', startDateTime);
         
         const endDateTime = new Date(startDateTime.getTime() + 30 * 60000); // 30 minutes later
