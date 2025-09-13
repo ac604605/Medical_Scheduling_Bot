@@ -725,6 +725,7 @@ Thank you for choosing HealthCare Medical Center. We look forward to seeing you!
 // Generate calendar file endpoint  
 app.get('/api/calendar/:appointmentId', async (req, res) => {
     const { appointmentId } = req.params;
+    console.log('📅 Calendar request for appointment:', appointmentId);
     
     try {
         // Get appointment details from database
@@ -735,16 +736,23 @@ app.get('/api/calendar/:appointmentId', async (req, res) => {
             JOIN users u ON a.user_id = u.id
             WHERE a.id = $1
         `;
+        
+        console.log('📅 Running calendar query for ID:', appointmentId);
         const result = await pool.query(appointmentQuery, [appointmentId]);
+        console.log('📅 Query result rows:', result.rows.length);
         
         if (result.rows.length === 0) {
+            console.log('❌ Appointment not found in database');
             return res.status(404).json({ error: 'Appointment not found' });
         }
         
         const appt = result.rows[0];
+        console.log('📅 Found appointment:', appt);
         
         // Generate ICS file content
+        console.log('📅 Generating ICS content...');
         const icsContent = generateICSFile(appt);
+        console.log('📅 ICS content generated, length:', icsContent.length);
         
         // Set headers for calendar file download
         res.setHeader('Content-Type', 'text/calendar');
@@ -752,26 +760,35 @@ app.get('/api/calendar/:appointmentId', async (req, res) => {
         res.send(icsContent);
         
     } catch (error) {
-        console.error('Error generating calendar file:', error);
+        console.error('❌ Calendar generation error:', error.message);
+        console.error('❌ Stack trace:', error.stack);
         res.status(500).json({ error: 'Error generating calendar file' });
     }
 });
 
 // Generate ICS (iCalendar) file content
 function generateICSFile(appointment) {
-    const startDateTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
-    const endDateTime = new Date(startDateTime.getTime() + 30 * 60000); // 30 minutes later
+    console.log('📅 Generating ICS for appointment:', appointment);
     
-    // Format dates for ICS (YYYYMMDDTHHMMSSZ format)
-    const formatICSDate = (date) => {
-        return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-    };
-    
-    const startICS = formatICSDate(startDateTime);
-    const endICS = formatICSDate(endDateTime);
-    const now = formatICSDate(new Date());
-    
-    return `BEGIN:VCALENDAR
+    try {
+        const startDateTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
+        console.log('📅 Start datetime:', startDateTime);
+        
+        const endDateTime = new Date(startDateTime.getTime() + 30 * 60000); // 30 minutes later
+        console.log('📅 End datetime:', endDateTime);
+        
+        // Format dates for ICS (YYYYMMDDTHHMMSSZ format)
+        const formatICSDate = (date) => {
+            return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+        };
+        
+        const startICS = formatICSDate(startDateTime);
+        const endICS = formatICSDate(endDateTime);
+        const now = formatICSDate(new Date());
+        
+        console.log('📅 ICS formatted dates - Start:', startICS, 'End:', endICS);
+        
+        return `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//HealthCare Medical Center//Appointment Scheduler//EN
 CALSCALE:GREGORIAN
@@ -782,24 +799,19 @@ DTSTART:${startICS}
 DTEND:${endICS}
 DTSTAMP:${now}
 SUMMARY:Medical Appointment - Dr. ${appointment.doctor_name}
-DESCRIPTION:Medical appointment with Dr. ${appointment.doctor_name} (${appointment.specialty})\\n\\nPatient: ${appointment.patient_name}\\nReason: ${appointment.reason_for_visit || 'General consultation'}\\n\\nLocation: HealthCare Medical Center\\n123 Medical Plaza Drive\\nOrange, VA 22960\\n\\nPhone: (540) 555-CARE\\n\\nPlease arrive 15 minutes early.
+DESCRIPTION:Medical appointment with Dr. ${appointment.doctor_name} (${appointment.specialty})
 LOCATION:HealthCare Medical Center, 123 Medical Plaza Drive, Orange, VA 22960
 ORGANIZER:CN=HealthCare Medical Center:MAILTO:appointments@healthcare.com
 ATTENDEE:CN=${appointment.patient_name}:MAILTO:john.smith@email.com
 STATUS:CONFIRMED
 TRANSP:OPAQUE
-BEGIN:VALARM
-TRIGGER:-PT24H
-DESCRIPTION:Medical appointment reminder - Dr. ${appointment.doctor_name} tomorrow
-ACTION:DISPLAY
-END:VALARM
-BEGIN:VALARM
-TRIGGER:-PT1H
-DESCRIPTION:Medical appointment in 1 hour - Dr. ${appointment.doctor_name}
-ACTION:DISPLAY
-END:VALARM
 END:VEVENT
 END:VCALENDAR`;
+        
+    } catch (error) {
+        console.error('❌ ICS generation error:', error);
+        throw error;
+    }
 }
 
 // --- Start server ---
