@@ -626,6 +626,7 @@ app.post('/api/complete-booking', async (req, res) => {
         });
     }
 });
+// Replace your existing /api/admin/patients endpoint with this enhanced version:
 app.get('/api/admin/patients', async (req, res) => {
     const { page = 1, limit = 20, search = '' } = req.query;
     const offset = (page - 1) * limit;
@@ -1180,6 +1181,86 @@ app.get('/api/admin/stats', async (req, res) => {
     } catch (error) {
         console.error('Error fetching stats:', error);
         res.status(500).json({ success: false, message: 'Error fetching statistics' });
+    }
+});
+
+// =========================
+// PATIENT MANAGEMENT APIs
+// =========================
+
+// Update patient
+app.put('/api/admin/patients/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, email, phone } = req.body;
+    
+    if (!name || !email) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Name and email are required' 
+        });
+    }
+    
+    try {
+        const query = `
+            UPDATE users 
+            SET name = $1, email = $2, phone = $3
+            WHERE id = $4
+            RETURNING *
+        `;
+        
+        const result = await pool.query(query, [name, email, phone, id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Patient not found' });
+        }
+        
+        res.json({
+            success: true,
+            message: 'Patient updated successfully',
+            data: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Error updating patient:', error);
+        if (error.code === '23505') { // Unique constraint violation
+            res.status(400).json({ success: false, message: 'Patient with this email already exists' });
+        } else {
+            res.status(500).json({ success: false, message: 'Error updating patient' });
+        }
+    }
+});
+
+// Create new patient
+app.post('/api/admin/patients', async (req, res) => {
+    const { name, email, phone } = req.body;
+    
+    if (!name || !email) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Name and email are required' 
+        });
+    }
+    
+    try {
+        const query = `
+            INSERT INTO users (name, email, phone)
+            VALUES ($1, $2, $3)
+            RETURNING *
+        `;
+        
+        const result = await pool.query(query, [name, email, phone]);
+        
+        res.json({
+            success: true,
+            message: 'Patient created successfully',
+            data: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Error creating patient:', error);
+        if (error.code === '23505') { // Unique constraint violation
+            res.status(400).json({ success: false, message: 'Patient with this email already exists' });
+        } else {
+            res.status(500).json({ success: false, message: 'Error creating patient' });
+        }
     }
 });
 
