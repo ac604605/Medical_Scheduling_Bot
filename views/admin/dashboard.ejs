@@ -594,6 +594,60 @@
     </div>
 </div>
 
+<!-- Appointments Section -->
+<div id="appointments-section" class="content-section">
+    <div class="section-header">
+        <h2>Appointment Management</h2>
+        <button class="btn btn-primary" onclick="showAppointmentModal()">
+            ➕ Schedule New Appointment
+        </button>
+    </div>
+    <div class="filters">
+        <div class="form-group">
+            <label>Search</label>
+            <input type="text" class="form-control" id="appointment-search" placeholder="Patient name, email...">
+        </div>
+        <div class="form-group">
+            <label>Status</label>
+            <select class="form-control" id="appointment-status-filter">
+                <option value="">All Statuses</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>From Date</label>
+            <input type="date" class="form-control" id="appointment-date-from">
+        </div>
+        <div class="form-group">
+            <label>To Date</label>
+            <input type="date" class="form-control" id="appointment-date-to">
+        </div>
+        <div class="form-group">
+            <button class="btn btn-primary" onclick="loadAppointments()">🔍 Filter</button>
+        </div>
+    </div>
+    <div class="table-container">
+        <table id="appointments-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Patient</th>
+                    <th>Doctor</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="appointments-tbody">
+                <tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
     <script>
         // Global state
         let currentSection = 'dashboard';
@@ -931,6 +985,195 @@
 			if (event.target === patientModal) {
 				closePatientModal();
 			}
+		}
+		// Appointment Management Functions
+		async function showAppointmentModal() {
+			// Load patients and doctors for dropdowns
+			await loadPatientsForDropdown();
+			await loadDoctorsForDropdown();
+			
+			document.getElementById('appointment-modal').style.display = 'block';
+			document.getElementById('appointment-form').reset();
+			delete document.getElementById('appointment-form').dataset.appointmentId;
+			document.querySelector('#appointment-modal h3').textContent = 'Add New Appointment';
+			
+			// Set default date to tomorrow
+			const tomorrow = new Date();
+			tomorrow.setDate(tomorrow.getDate() + 1);
+			document.getElementById('appointment-date').value = tomorrow.toISOString().split('T')[0];
+		}
+
+		function closeAppointmentModal() {
+			document.getElementById('appointment-modal').style.display = 'none';
+			document.getElementById('appointment-form').reset();
+			delete document.getElementById('appointment-form').dataset.appointmentId;
+			document.querySelector('#appointment-modal h3').textContent = 'Add New Appointment';
+		}
+
+		async function editAppointment(id) {
+			try {
+				// Load dropdown data first
+				await loadPatientsForDropdown();
+				await loadDoctorsForDropdown();
+				
+				// Get appointment details
+				const response = await fetch(`/api/admin/appointments/${id}`);
+				const data = await response.json();
+				
+				if (data.success) {
+					const apt = data.data;
+					
+					// Populate form
+					document.getElementById('appointment-patient').value = apt.user_id;
+					document.getElementById('appointment-doctor').value = apt.doctor_id;
+					document.getElementById('appointment-date').value = apt.appointment_date.split('T')[0];
+					document.getElementById('appointment-time').value = apt.appointment_time;
+					document.getElementById('appointment-status').value = apt.status;
+					document.getElementById('appointment-reason').value = apt.reason_for_visit || '';
+					document.getElementById('appointment-notes').value = apt.decrypted_notes || '';
+					
+					document.querySelector('#appointment-modal h3').textContent = 'Edit Appointment';
+					document.getElementById('appointment-form').dataset.appointmentId = id;
+					
+					document.getElementById('appointment-modal').style.display = 'block';
+				}
+			} catch (error) {
+				console.error('Error loading appointment:', error);
+				alert('Error loading appointment details');
+			}
+		}
+
+		async function loadPatientsForDropdown() {
+			try {
+				const response = await fetch('/api/admin/patients?limit=1000');
+				const data = await response.json();
+				
+				if (data.success) {
+					const select = document.getElementById('appointment-patient');
+					select.innerHTML = '<option value="">Select Patient</option>';
+					
+					data.data.forEach(patient => {
+						select.innerHTML += `<option value="${patient.id}">${patient.name} (${patient.email})</option>`;
+					});
+				}
+			} catch (error) {
+				console.error('Error loading patients:', error);
+			}
+		}
+
+		async function loadDoctorsForDropdown() {
+			try {
+				const response = await fetch('/api/admin/doctors?limit=1000');
+				const data = await response.json();
+				
+				if (data.success) {
+					const select = document.getElementById('appointment-doctor');
+					select.innerHTML = '<option value="">Select Doctor</option>';
+					
+					data.data.forEach(doctor => {
+						if (doctor.is_active) {
+							select.innerHTML += `<option value="${doctor.id}">${doctor.name} (${doctor.specialty})</option>`;
+						}
+					});
+				}
+			} catch (error) {
+				console.error('Error loading doctors:', error);
+			}
+		}
+
+		// Appointment form submission
+		document.getElementById('appointment-form').addEventListener('submit', async function(e) {
+			e.preventDefault();
+			
+			const appointmentId = this.dataset.appointmentId;
+			const isEdit = !!appointmentId;
+			
+			const formData = {
+				patient_id: document.getElementById('appointment-patient').value,
+				doctor_id: document.getElementById('appointment-doctor').value,
+				appointment_date: document.getElementById('appointment-date').value,
+				appointment_time: document.getElementById('appointment-time').value,
+				status: document.getElementById('appointment-status').value,
+				reason_for_visit: document.getElementById('appointment-reason').value,
+				notes: document.getElementById('appointment-notes').value
+			};
+			
+			try {
+				const response = await fetch(`/api/admin/appointments${isEdit ? `/${appointmentId}` : ''}`, {
+					method: isEdit ? 'PUT' : 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(formData)
+				});
+				
+				const data = await response.json();
+				
+				if (data.success) {
+					closeAppointmentModal();
+					loadAppointments();
+					loadDashboardStats();
+					alert(`Appointment ${isEdit ? 'updated' : 'created'} successfully!`);
+				} else {
+					alert('Error: ' + data.message);
+				}
+			} catch (error) {
+				console.error(`Error ${isEdit ? 'updating' : 'creating'} appointment:`, error);
+				alert(`Error ${isEdit ? 'updating' : 'creating'} appointment`);
+			}
+		});
+
+		// Update the loadAppointments function to include edit buttons
+		async function loadAppointments() {
+			const search = document.getElementById('appointment-search')?.value || '';
+			const status = document.getElementById('appointment-status-filter')?.value || '';
+			const dateFrom = document.getElementById('appointment-date-from')?.value || '';
+			const dateTo = document.getElementById('appointment-date-to')?.value || '';
+			const tbody = document.getElementById('appointments-tbody');
+			
+			try {
+				const params = new URLSearchParams({
+					search, status, date_from: dateFrom, date_to: dateTo
+				});
+				
+				const response = await fetch(`/api/admin/appointments?${params}`);
+				const data = await response.json();
+				
+				if (data.success) {
+					appointments = data.data;
+					tbody.innerHTML = appointments.map(apt => `
+						<tr>
+							<td>${new Date(apt.appointment_date).toLocaleDateString()}</td>
+							<td>${apt.appointment_time}</td>
+							<td>${apt.patient_name}<br><small>${apt.email}</small></td>
+							<td>${apt.doctor_name}<br><small>${apt.specialty}</small></td>
+							<td><span class="status-badge status-${apt.status}">${apt.status}</span></td>
+							<td>
+								<button class="btn btn-sm btn-primary" onclick="editAppointment(${apt.id})">Edit</button>
+								<select onchange="updateAppointmentStatus(${apt.id}, this.value)" style="font-size: 12px; margin-left: 5px;">
+									<option value="">Quick Status</option>
+									<option value="confirmed">Confirm</option>
+									<option value="completed">Complete</option>
+									<option value="cancelled">Cancel</option>
+									<option value="no-show">No Show</option>
+								</select>
+							</td>
+						</tr>
+					`).join('');
+				}
+			} catch (error) {
+				console.error('Error loading appointments:', error);
+				tbody.innerHTML = '<tr><td colspan="6">Error loading appointments</td></tr>';
+			}
+		}
+
+		// Update the modal click handler
+		window.onclick = function(event) {
+			const doctorModal = document.getElementById('doctor-modal');
+			const patientModal = document.getElementById('patient-modal');
+			const appointmentModal = document.getElementById('appointment-modal');
+			
+			if (event.target === doctorModal) closeDoctorModal();
+			if (event.target === patientModal) closePatientModal();
+			if (event.target === appointmentModal) closeAppointmentModal();
 		}
 		
     </script>

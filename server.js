@@ -1264,6 +1264,225 @@ app.post('/api/admin/patients', async (req, res) => {
     }
 });
 
+const CryptoJS = require('crypto-js');
+
+// Encryption key - in production, use environment variable
+const ENCRYPTION_KEY = process.env.NOTES_ENCRYPTION_KEY || 'your-secret-key-here';
+
+// Helper functions for note encryption
+function encryptNote(text) {
+    if (!text) return null;
+    return CryptoJS.AES.encrypt(text, ENCRYPTION_KEY).toString();
+}
+
+function decryptNote(encryptedText) {
+    if (!encryptedText) return null;
+    try {
+        const bytes = CryptoJS.AES.decrypt(encryptedText, ENCRYPTION_KEY);
+        return bytes.toString(CryptoJS.enc.Utf8);
+    } catch (error) {
+        console.error('Error decrypting note:', error);
+        return '[Decryption Error]';
+    }
+}
+
+// =========================
+// ENHANCED APPOINTMENT MANAGEMENT
+// =========================
+
+// Create new appointment
+app.post('/api/admin/appointments', async (req, res) => {
+    const { 
+        patient_id, 
+        doctor_id, 
+        appointment_date, 
+        appointment_time, 
+        appointment_type_id = 1,
+        reason_for_visit,
+        notes 
+    } = req.body;
+    
+    if (!patient_id || !doctor_id || !appointment_date || !appointment_time) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Patient, doctor, date, and time are required' 
+        });
+    }
+    
+    try {
+        // Check if time slot is available
+        const availability = await checkTimeSlotAvailability(doctor_id, appointment_date, appointment_time);
+        if (!availability.available) {
+            return res.status(400).json({
+                success: false,
+                message: 'That time slot is not available'
+            });
+        }
+        
+        // Encrypt notes if provided
+        const encryptedNotes = notes ? encryptNote(notes) : null;
+        
+        const query = `
+            INSERT INTO appointments (
+                user_id, doctor_id, appointment_type_id, 
+                appointment_date, appointment_time, reason_for_visit, 
+                notes, status
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'scheduled') 
+            RETURNING *
+        `;
+        
+        const result = await pool.query(query, [
+            patient_id, doctor_id, appointment_type_id, 
+            appointment_date, appointment_time, reason_for_visit,
+            encryptedNotes
+        ]);
+        
+        res.json({
+            success: true,
+            message: 'Appointment created successfully',
+            data: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Error creating appointment:', error);
+        res.status(500).json({ success: false, message: 'Error creating appointment' });
+    }
+});
+
+// Update appointment
+app.put('/api/admin/appointments/:id', async (req, res) => {
+    const { id } = req.params;
+    const { 
+        patient_id, 
+        doctor_id, 
+        appointment_date, 
+        appointment_time, 
+        appointment_type_id,
+        reason_for_visit,
+        notes,
+        status 
+    } = req.body;
+    
+    try {
+        // If changing time/doctor, check availability
+        if (doctor_id && appointment_date && appointment_time) {
+            const availability = await checkTimeSlotAvailability(doctor_id, appointment_date, appointment_time, id);
+            if (!availability.available) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'That time slot is not available'
+                });
+            }
+        }
+        
+        // Encrypt notes if provided
+        const encryptedNotes = notes ? encryptNote(notes) : null;
+        
+        const query = `
+            UPDATE appointments 
+            SET user_id = $1, doctor_id = $2, appointment_type_id = $3,
+                appointment_date = $4, appointment_time = $5, reason_for_visit = $6,
+                notes = $7, status = $8
+            WHERE id = $9
+            RETURNING *
+        `;
+        
+        const result = await pool.query(query, [
+            patient_id, doctor_id, appointment_type_id,
+            appointment_date, appointment_time, reason_for_visit,
+            encryptedNotes, status, id
+        ]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Appointment not found' });
+        }
+        
+        res.json({
+            success: true,
+            message: 'Appointment updated successfully',
+            data: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Error updating appointment:', error);
+        res.status(500).json({ success: false, message: 'Error updating appointment' });
+    }
+});
+
+// Get appointment details with decrypted notes
+app.get('/api/admin/appointments/:id', async (req, res) => {
+    const { id } = req.params;
+    
+    try {
+        const query = `
+            SELECT a.*, d.name as doctor_name, d.specialty, u.name as patient_name, u.email, u.phone
+            FROM appointments a
+            JOIN doctors d ON a.doctor_id = d.id
+            JOIN users u ON a.user_id = u.id
+            WHERE a.id = $1
+        `;
+        
+        const result = await pool.query(query, [id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Appointment not found' });
+        }
+        
+        const appointment = result.rows[0];
+        
+        // Decrypt notes for display
+        if (appointment.notes) {
+            appointment.decrypted_notes = decryptNote(appointment.notes);
+        }
+        
+        res.json({
+            success: true,
+            data: appointment
+        });
+    } catch (error) {
+        console.error('Error fetching appointment:', error);
+        res.status(500).json({ success: false, message: 'Error fetching appointment' });
+    }
+});
+
+// Update checkTimeSlotAvailability to exclude current appointment when editing
+async function checkTimeSlotAvailability(doctorId, date, time, excludeAppointmentId = null) {
+    try {
+        let dateStr = date;
+        if (date instanceof Date) {
+            dateStr = date.toISOString().split('T')[0];
+        } else if (typeof date === 'string' && date.includes('GMT')) {
+            dateStr = new Date(date).toISOString().split('T')[0];
+        }
+        
+        let query = `
+          SELECT CASE WHEN COUNT(*) = 0 THEN true ELSE false END as available
+          FROM (
+            SELECT 1 FROM appointments
+             WHERE doctor_id = $1 AND appointment_date = $2 AND appointment_time = $3 
+             AND status IN ('scheduled', 'confirmed')
+        `;
+        
+        let params = [doctorId, dateStr, time];
+        
+        if (excludeAppointmentId) {
+            query += ` AND id != $4`;
+            params.push(excludeAppointmentId);
+        }
+        
+        query += `
+            UNION ALL
+            SELECT 1 FROM blocked_slots
+             WHERE doctor_id = $1 AND blocked_date = $2 AND $3::time BETWEEN start_time AND end_time
+          ) conflicts;
+        `;
+        
+        const result = await pool.query(query, params);
+        return { available: !!result.rows[0].available };
+    } catch (err) {
+        console.error('checkTimeSlotAvailability error:', err);
+        return { available: false };
+    }
+}
+
 // =========================
 // REAL-WORLD CONSIDERATIONS
 // =========================
