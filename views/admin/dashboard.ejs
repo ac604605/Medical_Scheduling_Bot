@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Healthcare Admin Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .admin-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+        }
+
+        .sidebar-header {
+            padding: 20px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            margin-bottom: 30px;
+        }
+
+        .sidebar-header h2 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .sidebar-header p {
+            opacity: 0.8;
+            font-size: 14px;
+        }
+
+        .sidebar-nav {
+            list-style: none;
+        }
+
+        .sidebar-nav li {
+            margin-bottom: 10px;
+        }
+
+        .sidebar-nav a {
+            display: flex;
+            align-items: center;
+            padding: 12px 15px;
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .sidebar-nav a:hover,
+        .sidebar-nav a.active {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            transform: translateX(5px);
+        }
+
+        .sidebar-nav a .icon {
+            margin-right: 10px;
+            font-size: 18px;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .header {
+            background: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: between;
+            align-items: center;
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            border-left: 4px solid #3498db;
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .stat-card h3 {
+            font-size: 32px;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .stat-card p {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+
+        .stat-card.doctors { border-left-color: #e74c3c; }
+        .stat-card.today { border-left-color: #f39c12; }
+        .stat-card.upcoming { border-left-color: #27ae60; }
+
+        /* Content Sections */
+        .content-section {
+            display: none;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+
+        .content-section.active {
+            display: block;
+        }
+
+        .section-header {
+            padding: 20px 30px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .section-header h2 {
+            color: #2c3e50;
+            font-size: 22px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        /* Tables */
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-active { background: #d4edda; color: #155724; }
+        .status-inactive { background: #f8d7da; color: #721c24; }
+        .status-scheduled { background: #cce5ff; color: #004080; }
+        .status-completed { background: #d4edda; color: #155724; }
+        .status-cancelled { background: #f8d7da; color: #721c24; }
+
+        /* Forms */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #2c3e50;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .close {
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+        }
+
+        /* Loading */
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Filters */
+        .filters {
+            padding: 20px 30px;
+            border-bottom: 1px solid #eee;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            align-items: end;
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>Admin Panel</h2>
+                <p>Healthcare Management</p>
+            </div>
+            <nav>
+                <ul class="sidebar-nav">
+                    <li><a href="#dashboard" class="nav-link active" onclick="showSection('dashboard')">
+                        <span class="icon">📊</span> Dashboard
+                    </a></li>
+                    <li><a href="#doctors" class="nav-link" onclick="showSection('doctors')">
+                        <span class="icon">👩‍⚕️</span> Doctors
+                    </a></li>
+                    <li><a href="#appointments" class="nav-link" onclick="showSection('appointments')">
+                        <span class="icon">📅</span> Appointments
+                    </a></li>
+                    <li><a href="#patients" class="nav-link" onclick="showSection('patients')">
+                        <span class="icon">👥</span> Patients
+                    </a></li>
+                    <li><a href="#reports" class="nav-link" onclick="showSection('reports')">
+                        <span class="icon">📈</span> Reports
+                    </a></li>
+                    <li><a href="/" target="_blank">
+                        <span class="icon">🌐</span> Patient Portal
+                    </a></li>
+                </ul>
+            </nav>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="header">
+                <h1>Healthcare Admin Dashboard</h1>
+            </div>
+
+            <!-- Dashboard Section -->
+            <div id="dashboard-section" class="content-section active">
+                <div class="stats-grid">
+                    <div class="stat-card doctors">
+                        <h3 id="total-doctors">-</h3>
+                        <p>Active Doctors</p>
+                    </div>
+                    <div class="stat-card today">
+                        <h3 id="today-appointments">-</h3>
+                        <p>Today's Appointments</p>
+                    </div>
+                    <div class="stat-card upcoming">
+                        <h3 id="upcoming-appointments">-</h3>
+                        <p>Upcoming (7 days)</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Doctors Section -->
+            <div id="doctors-section" class="content-section">
+                <div class="section-header">
+                    <h2>Doctor Management</h2>
+                    <button class="btn btn-primary" onclick="showDoctorModal()">
+                        ➕ Add New Doctor
+                    </button>
+                </div>
+                <div class="filters">
+                    <div class="form-group">
+                        <label>Search Doctors</label>
+                        <input type="text" class="form-control" id="doctor-search" placeholder="Search by name or specialty...">
+                    </div>
+                    <div class="form-group">
+                        <button class="btn btn-primary" onclick="loadDoctors()">🔍 Search</button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table id="doctors-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Specialty</th>
+                                <th>Location</th>
+                                <th>Total Appointments</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="doctors-tbody">
+                            <tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Appointments Section -->
+            <div id="appointments-section" class="content-section">
+                <div class="section-header">
+                    <h2>Appointment Management</h2>
+                </div>
+                <div class="filters">
+                    <div class="form-group">
+                        <label>Search</label>
+                        <input type="text" class="form-control" id="appointment-search" placeholder="Patient name, email...">
+                    </div>
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select class="form-control" id="appointment-status-filter">
+                            <option value="">All Statuses</option>
+                            <option value="scheduled">Scheduled</option>
+                            <option value="confirmed">Confirmed</option>
+                            <option value="completed">Completed</option>
+                            <option value="cancelled">Cancelled</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>From Date</label>
+                        <input type="date" class="form-control" id="appointment-date-from">
+                    </div>
+                    <div class="form-group">
+                        <label>To Date</label>
+                        <input type="date" class="form-control" id="appointment-date-to">
+                    </div>
+                    <div class="form-group">
+                        <button class="btn btn-primary" onclick="loadAppointments()">🔍 Filter</button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table id="appointments-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Time</th>
+                                <th>Patient</th>
+                                <th>Doctor</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="appointments-tbody">
+                            <tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Doctor Modal -->
+    <div id="doctor-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add New Doctor</h3>
+                <span class="close" onclick="closeDoctorModal()">&times;</span>
+            </div>
+            <form id="doctor-form">
+                <div class="form-group">
+                    <label>Full Name *</label>
+                    <input type="text" class="form-control" id="doctor-name" required>
+                </div>
+                <div class="form-group">
+                    <label>Specialty *</label>
+                    <input type="text" class="form-control" id="doctor-specialty" required>
+                </div>
+                <div class="form-group">
+                    <label>Office Location</label>
+                    <input type="text" class="form-control" id="doctor-location">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" class="form-control" id="doctor-email">
+                </div>
+                <div class="form-group">
+                    <label>Phone</label>
+                    <input type="tel" class="form-control" id="doctor-phone">
+                </div>
+                <div style="text-align: right;">
+                    <button type="button" class="btn" onclick="closeDoctorModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Doctor</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let currentSection = 'dashboard';
+        let doctors = [];
+        let appointments = [];
+        
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDashboardStats();
+            loadDoctors();
+        });
+
+        // Navigation
+        function showSection(section) {
+            // Hide all sections
+            document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+            
+            // Show selected section
+            document.getElementById(section + '-section').classList.add('active');
+            document.querySelector(`[onclick="showSection('${section}')"]`).classList.add('active');
+            
+            currentSection = section;
+            
+            // Load section data
+            if (section === 'doctors') loadDoctors();
+            if (section === 'appointments') loadAppointments();
+        }
+
+        // Dashboard Stats
+        async function loadDashboardStats() {
+            try {
+                const response = await fetch('/api/admin/stats');
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('total-doctors').textContent = data.data.totalDoctors;
+                    document.getElementById('today-appointments').textContent = data.data.todayAppointments;
+                    document.getElementById('upcoming-appointments').textContent = data.data.upcomingAppointments;
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Doctor Management
+        async function loadDoctors() {
+            const search = document.getElementById('doctor-search')?.value || '';
+            const tbody = document.getElementById('doctors-tbody');
+            
+            try {
+                const response = await fetch(`/api/admin/doctors?search=${encodeURIComponent(search)}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    doctors = data.data;
+                    tbody.innerHTML = doctors.map(doctor => `
+                        <tr>
+                            <td>${doctor.name}</td>
+                            <td>${doctor.specialty}</td>
+                            <td>${doctor.office_location || '-'}</td>
+                            <td>${doctor.total_appointments || 0}</td>
+                            <td><span class="status-badge ${doctor.is_active ? 'status-active' : 'status-inactive'}">
+                                ${doctor.is_active ? 'Active' : 'Inactive'}
+                            </span></td>
+                            <td>
+                                <button class="btn btn-sm btn-primary" onclick="editDoctor(${doctor.id})">Edit</button>
+                                ${doctor.is_active ? 
+                                    `<button class="btn btn-sm btn-danger" onclick="deactivateDoctor(${doctor.id})">Deactivate</button>` :
+                                    `<button class="btn btn-sm btn-success" onclick="activateDoctor(${doctor.id})">Activate</button>`
+                                }
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Error loading doctors:', error);
+                tbody.innerHTML = '<tr><td colspan="6">Error loading doctors</td></tr>';
+            }
+        }
+
+        function showDoctorModal() {
+            document.getElementById('doctor-modal').style.display = 'block';
+            document.getElementById('doctor-form').reset();
+        }
+
+        function closeDoctorModal() {
+            document.getElementById('doctor-modal').style.display = 'none';
+        }
+
+        // Doctor form submission
+        document.getElementById('doctor-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = {
+                name: document.getElementById('doctor-name').value,
+                specialty: document.getElementById('doctor-specialty').value,
+                office_location: document.getElementById('doctor-location').value,
+                email: document.getElementById('doctor-email').value,
+                phone: document.getElementById('doctor-phone').value
+            };
+            
+            try {
+                const response = await fetch('/api/admin/doctors', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    closeDoctorModal();
+                    loadDoctors();
+                    alert('Doctor created successfully!');
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Error creating doctor:', error);
+                alert('Error creating doctor');
+            }
+        });
+
+        async function deactivateDoctor(id) {
+            if (confirm('Are you sure you want to deactivate this doctor?')) {
+                try {
+                    const response = await fetch(`/api/admin/doctors/${id}`, { method: 'DELETE' });
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        loadDoctors();
+                        alert('Doctor deactivated successfully');
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                } catch (error) {
+                    console.error('Error deactivating doctor:', error);
+                }
+            }
+        }
+
+        // Appointment Management
+        async function loadAppointments() {
+            const search = document.getElementById('appointment-search')?.value || '';
+            const status = document.getElementById('appointment-status-filter')?.value || '';
+            const dateFrom = document.getElementById('appointment-date-from')?.value || '';
+            const dateTo = document.getElementById('appointment-date-to')?.value || '';
+            const tbody = document.getElementById('appointments-tbody');
+            
+            try {
+                const params = new URLSearchParams({
+                    search, status, date_from: dateFrom, date_to: dateTo
+                });
+                
+                const response = await fetch(`/api/admin/appointments?${params}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    appointments = data.data;
+                    tbody.innerHTML = appointments.map(apt => `
+                        <tr>
+                            <td>${new Date(apt.appointment_date).toLocaleDateString()}</td>
+                            <td>${apt.appointment_time}</td>
+                            <td>${apt.patient_name}<br><small>${apt.email}</small></td>
+                            <td>${apt.doctor_name}<br><small>${apt.specialty}</small></td>
+                            <td><span class="status-badge status-${apt.status}">${apt.status}</span></td>
+                            <td>
+                                <select onchange="updateAppointmentStatus(${apt.id}, this.value)" style="font-size: 12px;">
+                                    <option value="">Update Status</option>
+                                    <option value="confirmed">Confirm</option>
+                                    <option value="completed">Complete</option>
+                                    <option value="cancelled">Cancel</option>
+                                    <option value="no-show">No Show</option>
+                                </select>
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Error loading appointments:', error);
+                tbody.innerHTML = '<tr><td colspan="6">Error loading appointments</td></tr>';
+            }
+        }
+
+        async function updateAppointmentStatus(id, status) {
+            if (!status) return;
+            
+            try {
+                const response = await fetch(`/api/admin/appointments/${id}/status`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    loadAppointments();
+                    loadDashboardStats();
+                    alert('Appointment status updated successfully');
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Error updating appointment:', error);
+            }
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('doctor-modal');
+            if (event.target === modal) {
+                closeDoctorModal();
+            }
+        }
+    </script>
+</body>
+</html>
