@@ -480,6 +480,40 @@
                     </table>
                 </div>
             </div>
+
+            <!-- Patients Section -->
+            <div id="patients-section" class="content-section">
+                <div class="section-header">
+                    <h2>Patient Management</h2>
+                </div>
+                <div class="table-container">
+                    <table id="patients-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Phone</th>
+                                <th>Total Appointments</th>
+                                <th>Last Appointment</th>
+                            </tr>
+                        </thead>
+                        <tbody id="patients-tbody">
+                            <tr><td colspan="5" class="loading"><div class="spinner"></div></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Reports Section -->
+            <div id="reports-section" class="content-section">
+                <div class="section-header">
+                    <h2>Reports & Analytics</h2>
+                </div>
+                <div style="padding: 30px; text-align: center; color: #666;">
+                    <h3>Coming Soon</h3>
+                    <p>Advanced reporting and analytics features will be available here.</p>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -524,6 +558,7 @@
         let currentSection = 'dashboard';
         let doctors = [];
         let appointments = [];
+        let patients = [];
         
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function() {
@@ -533,19 +568,17 @@
 
         // Navigation
         function showSection(section) {
-            // Hide all sections
             document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
             
-            // Show selected section
             document.getElementById(section + '-section').classList.add('active');
             document.querySelector(`[onclick="showSection('${section}')"]`).classList.add('active');
             
             currentSection = section;
             
-            // Load section data
             if (section === 'doctors') loadDoctors();
             if (section === 'appointments') loadAppointments();
+            if (section === 'patients') loadPatients();
         }
 
         // Dashboard Stats
@@ -603,27 +636,52 @@
         function showDoctorModal() {
             document.getElementById('doctor-modal').style.display = 'block';
             document.getElementById('doctor-form').reset();
+            delete document.getElementById('doctor-form').dataset.doctorId;
+            document.querySelector('#doctor-modal h3').textContent = 'Add New Doctor';
         }
 
         function closeDoctorModal() {
             document.getElementById('doctor-modal').style.display = 'none';
+            document.getElementById('doctor-form').reset();
+            delete document.getElementById('doctor-form').dataset.doctorId;
+            document.querySelector('#doctor-modal h3').textContent = 'Add New Doctor';
+        }
+
+        function editDoctor(id) {
+            const doctor = doctors.find(d => d.id === id);
+            if (!doctor) return;
+            
+            document.getElementById('doctor-name').value = doctor.name;
+            document.getElementById('doctor-specialty').value = doctor.specialty;
+            document.getElementById('doctor-location').value = doctor.office_location || '';
+            document.getElementById('doctor-email').value = doctor.email || '';
+            document.getElementById('doctor-phone').value = doctor.phone || '';
+            
+            document.querySelector('#doctor-modal h3').textContent = 'Edit Doctor';
+            document.getElementById('doctor-form').dataset.doctorId = id;
+            
+            document.getElementById('doctor-modal').style.display = 'block';
         }
 
         // Doctor form submission
         document.getElementById('doctor-form').addEventListener('submit', async function(e) {
             e.preventDefault();
             
+            const doctorId = this.dataset.doctorId;
+            const isEdit = !!doctorId;
+            
             const formData = {
                 name: document.getElementById('doctor-name').value,
                 specialty: document.getElementById('doctor-specialty').value,
                 office_location: document.getElementById('doctor-location').value,
                 email: document.getElementById('doctor-email').value,
-                phone: document.getElementById('doctor-phone').value
+                phone: document.getElementById('doctor-phone').value,
+                is_active: true
             };
             
             try {
-                const response = await fetch('/api/admin/doctors', {
-                    method: 'POST',
+                const response = await fetch(`/api/admin/doctors${isEdit ? `/${doctorId}` : ''}`, {
+                    method: isEdit ? 'PUT' : 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(formData)
                 });
@@ -633,13 +691,13 @@
                 if (data.success) {
                     closeDoctorModal();
                     loadDoctors();
-                    alert('Doctor created successfully!');
+                    alert(`Doctor ${isEdit ? 'updated' : 'created'} successfully!`);
                 } else {
                     alert('Error: ' + data.message);
                 }
             } catch (error) {
-                console.error('Error creating doctor:', error);
-                alert('Error creating doctor');
+                console.error(`Error ${isEdit ? 'updating' : 'creating'} doctor:`, error);
+                alert(`Error ${isEdit ? 'updating' : 'creating'} doctor`);
             }
         });
 
@@ -725,6 +783,32 @@
                 }
             } catch (error) {
                 console.error('Error updating appointment:', error);
+            }
+        }
+
+        // Patient Management
+        async function loadPatients() {
+            const tbody = document.getElementById('patients-tbody');
+            
+            try {
+                const response = await fetch('/api/admin/patients');
+                const data = await response.json();
+                
+                if (data.success) {
+                    patients = data.data;
+                    tbody.innerHTML = patients.map(patient => `
+                        <tr>
+                            <td>${patient.name}</td>
+                            <td>${patient.email}</td>
+                            <td>${patient.phone || '-'}</td>
+                            <td>${patient.total_appointments || 0}</td>
+                            <td>${patient.last_appointment ? new Date(patient.last_appointment).toLocaleDateString() : '-'}</td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Error loading patients:', error);
+                tbody.innerHTML = '<tr><td colspan="5">Error loading patients</td></tr>';
             }
         }
 

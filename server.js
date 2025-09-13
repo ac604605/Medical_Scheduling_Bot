@@ -245,69 +245,7 @@ function generateSmartFallback(userMessage, dbContext, aiText = null) {
         actions: []
     };
 }
-function editDoctor(id) {
-    const doctor = doctors.find(d => d.id === id);
-    if (!doctor) return;
-    
-    // Populate the modal with doctor data
-    document.getElementById('doctor-name').value = doctor.name;
-    document.getElementById('doctor-specialty').value = doctor.specialty;
-    document.getElementById('doctor-location').value = doctor.office_location || '';
-    document.getElementById('doctor-email').value = doctor.email || '';
-    document.getElementById('doctor-phone').value = doctor.phone || '';
-    
-    // Change modal title and store ID for update
-    document.querySelector('#doctor-modal h3').textContent = 'Edit Doctor';
-    document.getElementById('doctor-form').dataset.doctorId = id;
-    
-    document.getElementById('doctor-modal').style.display = 'block';
-}
 
-// Update the doctor form submission to handle both create and edit:
-document.getElementById('doctor-form').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    
-    const doctorId = this.dataset.doctorId;
-    const isEdit = !!doctorId;
-    
-    const formData = {
-        name: document.getElementById('doctor-name').value,
-        specialty: document.getElementById('doctor-specialty').value,
-        office_location: document.getElementById('doctor-location').value,
-        email: document.getElementById('doctor-email').value,
-        phone: document.getElementById('doctor-phone').value,
-        is_active: true
-    };
-    
-    try {
-        const response = await fetch(`/api/admin/doctors${isEdit ? `/${doctorId}` : ''}`, {
-            method: isEdit ? 'PUT' : 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(formData)
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            closeDoctorModal();
-            loadDoctors();
-            alert(`Doctor ${isEdit ? 'updated' : 'created'} successfully!`);
-        } else {
-            alert('Error: ' + data.message);
-        }
-    } catch (error) {
-        console.error(`Error ${isEdit ? 'updating' : 'creating'} doctor:`, error);
-        alert(`Error ${isEdit ? 'updating' : 'creating'} doctor`);
-    }
-});
-
-// Update closeDoctorModal to reset the form:
-function closeDoctorModal() {
-    document.getElementById('doctor-modal').style.display = 'none';
-    document.getElementById('doctor-form').reset();
-    delete document.getElementById('doctor-form').dataset.doctorId;
-    document.querySelector('#doctor-modal h3').textContent = 'Add New Doctor';
-}
 // Add these helper functions for better date/time formatting
 function formatDate(dateStr) {
     const date = new Date(dateStr + 'T00:00:00');
